@@ -128,10 +128,8 @@ class _BotsSection(QGroupBox):
 
     async def _refresh_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/bots")
-            data = r.json() if r.status_code == 200 else {}
+            from bots import runner as bots_runner
+            data = bots_runner.get_state_snapshot()
         except Exception:
             self._status.setText("runner not reachable")
             self._status.setProperty("role", "danger")
@@ -183,37 +181,32 @@ class _BotsSection(QGroupBox):
 
     async def _post_prefix(self, prefix: str) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.post(
-                    "http://127.0.0.1:8080/api/bots/prefix",
-                    json={"prefix": prefix},
-                )
-            if r.status_code != 200:
-                from gui.widgets.toast import show_toast
-                show_toast(self, "Prefix update failed", role="danger")
-                return
+            from bots import runner as bots_runner
+            cfg = bots_runner._state.config
+            if cfg is None:
+                raise RuntimeError("bots runner not started")
+            await cfg.set_prefix(prefix)
         except Exception:
             log.exception("set prefix failed")
+            from gui.widgets.toast import show_toast
+            show_toast(self, "Prefix update failed", role="danger")
 
     def _on_toggle(self, name: str, enabled: bool) -> None:
         _schedule(self._post_toggle(name, enabled))
 
     async def _post_toggle(self, name: str, enabled: bool) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.post(
-                    f"http://127.0.0.1:8080/api/bots/{name}/toggle",
-                    json={"enabled": enabled},
-                )
+            from bots import runner as bots_runner
+            cfg = bots_runner._state.config
+            if cfg is None:
+                raise RuntimeError("bots runner not started")
+            await cfg.set_enabled(name, enabled)
         except Exception:
             log.exception("toggle bot failed")
+            from gui.widgets.toast import show_toast
+            show_toast(self, f"{name}: failed", role="danger")
             return
         from gui.widgets.toast import show_toast
-        if r.status_code == 200:
-            show_toast(self, f"{name}: {'on' if enabled else 'off'}", role="ok")
-        else:
-            show_toast(self, f"{name}: failed", role="danger")
+        show_toast(self, f"{name}: {'on' if enabled else 'off'}", role="ok")
         # Re-pull the runner state to reflect any cascading changes.
         self._refresh()

@@ -192,9 +192,9 @@ class _BroadcastView(QWidget):
 
     async def _clear_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as c:
-                await c.delete("http://127.0.0.1:8080/api/messages")
+            import config as cfg
+            import database
+            await database.clear_messages(cfg.DB_PATH)
         except Exception:
             log.exception("clear messages failed")
             return
@@ -206,10 +206,8 @@ class _BroadcastView(QWidget):
 
     async def _populate_and_show_canned(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/canned-messages")
-            items = r.json() if r.status_code == 200 else []
+            import database
+            items = await database.get_canned_messages()
         except Exception:
             items = []
         if not items:

@@ -528,10 +528,8 @@ class Page(QWidget):
 
     async def _fetch_neighbors(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/neighbor-info")
-            links_raw = r.json() if r.status_code == 200 else []
+            import database
+            links_raw = await database.get_neighbor_info()
         except Exception:
             return
         try:
@@ -561,10 +559,8 @@ class Page(QWidget):
 
     async def _fetch_waypoints(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/waypoints")
-            wps = r.json() if r.status_code == 200 else []
+            import database
+            wps = await database.get_waypoints(active_only=True)
         except Exception:
             return
         seen = set()
@@ -592,11 +588,9 @@ class Page(QWidget):
 
     async def _fetch_custom_markers(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/map/markers")
-            data = r.json() if r.status_code == 200 else {}
-            markers = data.get("markers", []) if isinstance(data, dict) else data
+            import config as cfg
+            import database
+            markers = await database.get_markers(cfg.DB_PATH)
         except Exception:
             return
         seen = set()
@@ -686,13 +680,9 @@ class Page(QWidget):
 
     async def _add_custom_marker_async(self, label: str, lat: float, lon: float) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                await c.post(
-                    "http://127.0.0.1:8080/api/map/markers",
-                    json={"label": label, "icon_type": "poi",
-                          "latitude": lat, "longitude": lon},
-                )
+            import config as cfg
+            import database
+            await database.create_marker(cfg.DB_PATH, label, "poi", lat, lon)
         except Exception:
             log.exception("add marker failed")
             from PySide6.QtWidgets import QMessageBox
@@ -701,16 +691,13 @@ class Page(QWidget):
 
     async def _send_waypoint_async(self, name: str, lat: float, lon: float,
                                    description: str, expire_hours: int) -> None:
+        import time
+        expire_ts = int(time.time()) + max(0, int(expire_hours)) * 3600
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as c:
-                await c.post(
-                    "http://127.0.0.1:8080/api/waypoints/send",
-                    json={
-                        "name": name, "lat": lat, "lon": lon,
-                        "description": description or "", "expire_hours": expire_hours,
-                    },
-                )
+            import meshtasticd_client
+            await meshtasticd_client.send_waypoint(
+                name, lat, lon, "default", description or "", expire_ts,
+            )
         except Exception:
             log.exception("send waypoint failed")
             from PySide6.QtWidgets import QMessageBox
@@ -744,12 +731,10 @@ class Page(QWidget):
 
         async def populate():
             try:
-                import httpx
-                async with httpx.AsyncClient(timeout=5.0) as c:
-                    rm = await c.get("http://127.0.0.1:8080/api/map/markers")
-                    rw = await c.get("http://127.0.0.1:8080/api/waypoints")
-                markers = (rm.json().get("markers") or []) if rm.status_code == 200 else []
-                waypoints = rw.json() if rw.status_code == 200 else []
+                import config as cfg
+                import database
+                markers = await database.get_markers(cfg.DB_PATH)
+                waypoints = await database.get_waypoints(active_only=True)
             except Exception:
                 return
             for m in markers:
@@ -766,14 +751,13 @@ class Page(QWidget):
                 wp_list.addItem(item)
 
         async def remove(kind: str, oid: int):
-            url = (
-                f"http://127.0.0.1:8080/api/map/markers/{oid}" if kind == "marker"
-                else f"http://127.0.0.1:8080/api/waypoints/{oid}"
-            )
             try:
-                import httpx
-                async with httpx.AsyncClient(timeout=5.0) as c:
-                    await c.delete(url)
+                import config as cfg
+                import database
+                if kind == "marker":
+                    await database.delete_marker(cfg.DB_PATH, oid)
+                else:
+                    await database.delete_waypoint(oid)
             except Exception:
                 pass
             self._refresh_custom_markers()

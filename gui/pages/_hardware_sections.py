@@ -329,10 +329,9 @@ class _GpioSection(QGroupBox):
 
     async def _refresh_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/config/gpio")
-            devices = r.json() if r.status_code == 200 else []
+            import config as cfg
+            import database
+            devices = await database.get_gpio_devices(cfg.DB_PATH)
         except Exception:
             log.exception("gpio refresh failed")
             devices = []
@@ -352,9 +351,9 @@ class _GpioSection(QGroupBox):
 
     async def _add_async(self, payload: dict) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as c:
-                await c.post("http://127.0.0.1:8080/api/config/gpio", json=payload)
+            import config as cfg
+            import database
+            await database.add_gpio_device(cfg.DB_PATH, payload)
         except Exception:
             log.exception("gpio add failed")
             QMessageBox.warning(self, "GPIO", "Add failed.")
@@ -372,9 +371,9 @@ class _GpioSection(QGroupBox):
 
     async def _update_async(self, dev_id: int, payload: dict) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as c:
-                await c.put(f"http://127.0.0.1:8080/api/config/gpio/{dev_id}", json=payload)
+            import config as cfg
+            import database
+            await database.update_gpio_device(cfg.DB_PATH, dev_id, payload)
         except Exception:
             log.exception("gpio update failed")
             QMessageBox.warning(self, "GPIO", "Update failed.")
@@ -395,9 +394,9 @@ class _GpioSection(QGroupBox):
 
     async def _delete_async(self, dev_id: int) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                await c.delete(f"http://127.0.0.1:8080/api/config/gpio/{dev_id}")
+            import config as cfg
+            import database
+            await database.delete_gpio_device(cfg.DB_PATH, dev_id)
         except Exception:
             log.exception("gpio delete failed")
             QMessageBox.warning(self, "GPIO", "Delete failed.")
@@ -550,10 +549,9 @@ class _AlertsSection(QGroupBox):
 
     async def _refresh_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/config/alerts")
-            d = r.json() if r.status_code == 200 else {}
+            import config as cfg
+            import database
+            d = await database.get_config_cache(cfg.DB_PATH, "alerts") or {}
         except Exception:
             d = {}
         self._offline.setValue(int(d.get("node_offline_min", 30)))
@@ -570,11 +568,9 @@ class _AlertsSection(QGroupBox):
 
     async def _save_async(self, body: dict) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.post("http://127.0.0.1:8080/api/config/alerts", json=body)
-            if r.status_code != 200:
-                QMessageBox.warning(self, "Alerts", f"Save failed: {r.text[:120]}")
+            import config as cfg
+            import database
+            await database.set_config_cache(cfg.DB_PATH, "alerts", body)
         except Exception:
             log.exception("alerts save failed")
             QMessageBox.warning(self, "Alerts", "Save failed.")
@@ -613,16 +609,23 @@ class _MapConfigSection(QGroupBox):
         _schedule(self._refresh_async())
 
     async def _refresh_async(self) -> None:
+        from pathlib import Path
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/config/map")
-            d = r.json() if r.status_code == 200 else {}
+            import config as cfg
+            import database
+            d = await database.get_config_cache(cfg.DB_PATH, "map") or {}
+            lora = await database.get_config_cache(cfg.DB_PATH, "lora") or {}
         except Exception:
-            d = {}
+            d, lora = {}, {}
         self._local_tiles.setChecked(bool(d.get("local_tiles")))
-        self._region.setText(str(d.get("region") or "—"))
-        self._tiles_present.setText("yes" if d.get("tiles_present") else "no")
+        self._region.setText(str(lora.get("region") or "—"))
+        # Tiles present: any png under data/tiles/osm/.
+        tiles_dir = Path("data/tiles/osm")
+        try:
+            present = tiles_dir.exists() and any(tiles_dir.rglob("*.png"))
+        except Exception:
+            present = False
+        self._tiles_present.setText("yes" if present else "no")
 
     def _on_save(self) -> None:
         body = {"local_tiles": self._local_tiles.isChecked()}
@@ -630,9 +633,9 @@ class _MapConfigSection(QGroupBox):
 
     async def _save_async(self, body: dict) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                await c.post("http://127.0.0.1:8080/api/config/map", json=body)
+            import config as cfg
+            import database
+            await database.set_config_cache(cfg.DB_PATH, "map", body)
         except Exception:
             log.exception("map config save failed")
             QMessageBox.warning(self, "Map", "Save failed.")
@@ -678,10 +681,8 @@ class _CannedMessagesSection(QGroupBox):
 
     async def _refresh_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/canned-messages")
-            items = r.json() if r.status_code == 200 else []
+            import database
+            items = await database.get_canned_messages()
         except Exception:
             items = []
         self._list.clear()
@@ -757,18 +758,14 @@ class _CannedMessagesSection(QGroupBox):
 
     async def _post_async(self, method: str, msg_id: int | None,
                           text: str | None, order: int | None) -> None:
-        url = "http://127.0.0.1:8080/api/canned-messages"
-        if msg_id is not None:
-            url += f"/{msg_id}"
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                if method == "POST":
-                    await c.post(url, json={"text": text, "sort_order": order})
-                elif method == "PUT":
-                    await c.put(url, json={"text": text, "sort_order": order})
-                elif method == "DELETE":
-                    await c.delete(url)
+            import database
+            if method == "POST":
+                await database.add_canned_message(text or "", int(order or 0))
+            elif method == "PUT" and msg_id is not None:
+                await database.update_canned_message(msg_id, text or "", int(order or 0))
+            elif method == "DELETE" and msg_id is not None:
+                await database.delete_canned_message(msg_id)
         except Exception:
             log.exception("canned %s failed", method)
             QMessageBox.warning(self, "Canned", f"{method} failed.")

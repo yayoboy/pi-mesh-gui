@@ -406,10 +406,11 @@ class MainWindow(QMainWindow):
 
     async def _fetch_unread_count(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=2.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/messages/unread-count")
-            count = int((r.json() or {}).get("count", 0)) if r.status_code == 200 else 0
+            import config as cfg
+            import database
+            import meshtasticd_client
+            local_id = meshtasticd_client.get_local_id() or ""
+            count = await database.get_total_unread(cfg.DB_PATH, local_id)
         except Exception:
             count = 0
         # Index 2 in _TABS is the Msg tab.

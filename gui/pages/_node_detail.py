@@ -297,16 +297,14 @@ class NodeDetailDialog(QDialog):
         self._schedule(self._do_forget(nid, purge.isChecked()))
 
     async def _do_forget(self, nid: str, purge: bool) -> None:
-        url = f"http://127.0.0.1:8080/api/nodes/{nid}"
-        if purge:
-            url += "?purge=true"
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as c:
-                r = await c.delete(url)
-            if r.status_code != 200:
-                self._set_status(f"✗ forget failed: {r.text[:120]}", role="danger")
-                return
+            import config as cfg
+            import database
+            import meshtasticd_client
+            await database.delete_node(cfg.DB_PATH, nid, purge=purge)
+            # Drop the entry from the in-memory cache so the nodes list
+            # reflects it immediately without a full reload.
+            meshtasticd_client._node_cache.pop(nid, None)
         except Exception as exc:
             self._set_status(f"✗ forget error: {exc}", role="danger")
             return

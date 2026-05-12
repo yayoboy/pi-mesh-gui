@@ -103,6 +103,15 @@ async def _async_main(app, window, *, embed_uvicorn: bool) -> None:
         bus.start(),
     ]
 
+    # Auto-reply bot framework. start() subscribes to the meshtasticd event
+    # queue and dispatches incoming messages to bots that match their prefix.
+    try:
+        from bots import runner as bots_runner
+        await bots_runner.start(cfg.DB_PATH)
+    except Exception:
+        log.exception("bots runner failed to start")
+        bots_runner = None
+
     server = None
     if embed_uvicorn:
         import uvicorn
@@ -126,6 +135,11 @@ async def _async_main(app, window, *, embed_uvicorn: bool) -> None:
         log.info("shutting down")
         if server is not None:
             server.should_exit = True
+        if bots_runner is not None:
+            try:
+                await bots_runner.stop()
+            except Exception:
+                log.exception("bots runner stop failed")
         for t in background:
             t.cancel()
         await asyncio.gather(*background, return_exceptions=True)
