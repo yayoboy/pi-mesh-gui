@@ -61,6 +61,15 @@ QToolButton:checked {{
     color: {accent};
 }}
 
+QFrame#tabbar QToolButton {{
+    border-top: 2px solid transparent;
+    padding-top: 2px;
+}}
+QFrame#tabbar QToolButton:checked {{
+    border-top: 2px solid {accent};
+    font-weight: bold;
+}}
+
 QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
     background: {panel};
     color: {text};

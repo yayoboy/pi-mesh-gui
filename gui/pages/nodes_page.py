@@ -14,8 +14,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, QSize, Slot
+from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from gui.pages._node_format import fmt_age, fmt_node
+from gui.widgets.status_icons import RotationIcon, icon_pixmap
 
 log = logging.getLogger(__name__)
 
@@ -55,10 +56,10 @@ def _row_html(node: dict, *, now: int | None = None) -> str:
     short_color = "var(--accent)" if node.get("is_local") else "var(--text)"
     return (
         f'<div style="font-weight:{weight}; color:{short_color};">'
-        f'  <span style="font-size:13px;">{short}</span>'
-        f'  <span style="color:#9aa;font-weight:400;font-size:11px;"> {long_name}</span>'
+        f'  <span style="font-size:14px;">{short}</span>'
+        f'  <span style="color:#9aa;font-weight:400;font-size:12px;"> {long_name}</span>'
         f'</div>'
-        f'<div style="font-size:10px;color:#7a8090;">{sub}</div>'
+        f'<div style="font-size:11px;color:#8a92a4;margin-top:1px;">{sub}</div>'
     )
 
 
@@ -81,13 +82,16 @@ class Page(QWidget):
         f.setPointSize(9)
         self._count.setFont(f)
         self._search = QLineEdit(self)
-        self._search.setPlaceholderText("filter…")
+        self._search.setPlaceholderText("filtra nodi…")
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(self._on_filter)
         head.addWidget(self._count)
         head.addWidget(self._search, 1)
-        refresh = QPushButton("⟳")
-        refresh.setFixedWidth(28)
+        refresh = QPushButton(self)
+        refresh.setIcon(QIcon(icon_pixmap(RotationIcon, 18, "#cdd")))
+        refresh.setIconSize(QSize(18, 18))
+        refresh.setToolTip("Aggiorna")
+        refresh.setFixedWidth(36)
         refresh.clicked.connect(self._refresh)
         head.addWidget(refresh)
         layout.addLayout(head)
@@ -135,13 +139,15 @@ class Page(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, n.get("id"))
             label = QLabel(_row_html(n))
             label.setTextFormat(Qt.TextFormat.RichText)
-            label.setStyleSheet("padding:4px;")
-            label.setMinimumHeight(34)
+            label.setStyleSheet("padding:6px 8px;")
+            label.setMinimumHeight(42)
             item.setSizeHint(label.sizeHint())
             self._list.addItem(item)
             self._list.setItemWidget(item, label)
             shown += 1
-        self._count.setText(f"{shown}/{len(self._nodes)}")
+        total = len(self._nodes)
+        unit = "nodo" if total == 1 else "nodi"
+        self._count.setText(f"{shown}/{total} {unit}")
 
     def _upsert(self, event: dict) -> None:
         node_id = event.get("id")
