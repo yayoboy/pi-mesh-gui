@@ -1074,9 +1074,8 @@ class Page(QWidget):
 
     async def _reboot_pi(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient() as c:
-                await c.post("http://127.0.0.1:8080/api/system/reboot")
+            import system_ops
+            await system_ops.reboot()
         except Exception:
             log.exception("reboot failed")
             QMessageBox.warning(self, "Admin", "Failed to issue reboot.")
@@ -1093,12 +1092,9 @@ class Page(QWidget):
 
     async def _pi_factory_reset_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=15.0) as c:
-                r = await c.post("http://127.0.0.1:8080/api/system/factory-reset")
-            if r.status_code != 200:
-                QMessageBox.warning(self, "Admin", f"Pi factory reset failed: {r.text[:120]}")
-                return
+            import config as cfg
+            import system_ops
+            await system_ops.pi_factory_reset(cfg.DB_PATH)
         except Exception as exc:
             QMessageBox.warning(self, "Admin", f"Pi factory reset error: {exc}")
             return

@@ -216,11 +216,16 @@ class StatusBar(QFrame):
 
     async def _post_system_action(self, action: str) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient() as c:
-                await c.post(f"http://127.0.0.1:8080/api/system/{action}")
+            import system_ops
+            if action == "reboot":
+                await system_ops.reboot()
+            elif action == "shutdown":
+                await system_ops.shutdown()
+            else:
+                raise ValueError(f"unknown system action: {action}")
         except Exception:
             log.exception("system action %s failed", action)
+            QMessageBox.warning(self, "pi-Mesh", f"{action} failed.")
 
 
 # ---------------------------------------------------------------------------
