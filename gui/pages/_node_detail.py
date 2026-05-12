@@ -251,26 +251,17 @@ class NodeDetailDialog(QDialog):
     async def _post_admin(self, nid: str, operation: str, ok_msg: str, *, warn: bool = False) -> None:
         self._set_status(f"sending {operation}…")
         from gui.widgets.toast import show_toast
+        # meshtasticd_client.send_admin expects underscored names.
+        op = operation.replace("-", "_")
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as c:
-                r = await c.post(
-                    f"http://127.0.0.1:8080/api/admin/{nid}/{operation}",
-                )
-            if r.status_code == 200:
-                self._set_status(f"✓ {ok_msg}", role="warn" if warn else "ok")
-                show_toast(self, ok_msg, role="warn" if warn else "ok")
-                return
-            err = ""
-            try:
-                err = r.json().get("error") or r.json().get("detail") or ""
-            except Exception:
-                err = r.text[:160]
-            self._set_status(f"✗ {operation} failed: {err}", role="danger")
-            show_toast(self, f"{operation} failed", role="danger")
+            import meshtasticd_client
+            await meshtasticd_client.send_admin(nid, op)
         except Exception as exc:
             self._set_status(f"✗ {operation} error: {exc}", role="danger")
             show_toast(self, f"{operation} error", role="danger")
+            return
+        self._set_status(f"✓ {ok_msg}", role="warn" if warn else "ok")
+        show_toast(self, ok_msg, role="warn" if warn else "ok")
 
     # -- Forget ------------------------------------------------------
 
