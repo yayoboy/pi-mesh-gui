@@ -20,7 +20,7 @@ if [[ "${1:-}" == "--reset" ]]; then
   if [[ -f "$CALIB_CONF" ]]; then
     rm -f "$CALIB_CONF"
     ok "Calibrazione rimossa: $CALIB_CONF"
-    echo "  Riavvia il kiosk per applicare: sudo systemctl restart kiosk"
+    echo "  Riavvia il kiosk per applicare: sudo systemctl restart pimesh-gui"
   else
     skip "Nessuna calibrazione trovata"
   fi
@@ -43,7 +43,7 @@ fi
 # Check X11 is running
 if ! xdpyinfo -display :0 &>/dev/null; then
   err "X11 non attivo su :0"
-  echo "  Avvia il kiosk prima: sudo systemctl start kiosk"
+  echo "  Avvia il kiosk prima: sudo systemctl start pimesh-gui"
   exit 1
 fi
 
@@ -76,7 +76,7 @@ if [[ -s "$CALIB_CONF" ]]; then
   echo ""
   cat "$CALIB_CONF"
   echo ""
-  echo "  Riavvia il kiosk per applicare: sudo systemctl restart kiosk"
+  echo "  Riavvia il kiosk per applicare: sudo systemctl restart pimesh-gui"
 else
   err "Nessun dato di calibrazione generato"
   rm -f "$CALIB_CONF"
