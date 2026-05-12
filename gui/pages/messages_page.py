@@ -32,7 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from gui.pages._message_format import format_message
-from gui.widgets.status_icons import MenuIcon, icon_pixmap
+from gui.widgets.status_icons import MenuIcon, TrashIcon, icon_pixmap
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class _BroadcastView(QWidget):
         layout.setSpacing(4)
 
         head = QHBoxLayout()
-        head.addWidget(QLabel("Channel"))
+        head.addWidget(QLabel("Canale"))
         self.channel = QSpinBox(self)
         self.channel.setRange(0, 7)
         self.channel.valueChanged.connect(lambda _v: self._reload())
@@ -65,8 +65,9 @@ class _BroadcastView(QWidget):
 
         # Clear-history trash button
         clear = QToolButton(self)
-        clear.setText("🗑")
-        clear.setToolTip("Clear history")
+        clear.setIcon(QIcon(icon_pixmap(TrashIcon, 18, "#cdd")))
+        clear.setIconSize(QSize(18, 18))
+        clear.setToolTip("Svuota cronologia")
         clear.clicked.connect(self._on_clear)
         head.addWidget(clear)
         layout.addLayout(head)
@@ -83,14 +84,14 @@ class _BroadcastView(QWidget):
 
         comp = QHBoxLayout()
         self.input = QLineEdit(self)
-        self.input.setPlaceholderText("Type a message…")
+        self.input.setPlaceholderText("Scrivi un messaggio…")
         self.input.returnPressed.connect(self._on_send)
         canned = QToolButton(self)
         canned.setIcon(QIcon(icon_pixmap(MenuIcon, 18, "#cdd")))
         canned.setIconSize(QSize(18, 18))
         canned.setToolTip("Canned messages")
         canned.clicked.connect(self._show_canned_menu)
-        send = QPushButton("Send")
+        send = QPushButton("Invia")
         send.clicked.connect(self._on_send)
         comp.addWidget(self.input, 1)
         comp.addWidget(canned)
@@ -119,7 +120,8 @@ class _BroadcastView(QWidget):
             self._add_load_more_item()
         for m in msgs:
             self._append(m)
-        self.info.setText(f"{len(msgs)} msgs")
+        n = len(msgs)
+        self.info.setText(f"{n} {'msg' if n == 1 else 'msg'}")
         self._scroll_bottom()
 
     def _add_load_more_item(self) -> None:
@@ -317,7 +319,7 @@ class _DmView(QWidget):
         self.input = QLineEdit(right)
         self.input.setPlaceholderText("Type a DM…")
         self.input.returnPressed.connect(self._on_send)
-        send = QPushButton("Send")
+        send = QPushButton("Invia")
         send.clicked.connect(self._on_send)
         comp.addWidget(self.input, 1)
         comp.addWidget(send)

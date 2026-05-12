@@ -73,12 +73,12 @@ class _DeviceSection(QGroupBox):
         for r in _ROLES:
             self._role.addItem(r)
 
-        form.addRow("Long name", self._long)
-        form.addRow("Short name", self._short)
-        form.addRow("Role", self._role)
+        form.addRow("Nome completo", self._long)
+        form.addRow("Nome breve", self._short)
+        form.addRow("Ruolo", self._role)
 
         save_row = QHBoxLayout()
-        save = QPushButton("Save device")
+        save = QPushButton("Salva")
         save.clicked.connect(self._save)
         save_row.addStretch(1)
         save_row.addWidget(save)

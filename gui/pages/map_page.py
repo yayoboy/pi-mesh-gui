@@ -95,6 +95,21 @@ class MapView(QGraphicsView):
         self._custom_marker_items: dict[int, tuple[QGraphicsEllipseItem, QGraphicsTextItem]] = {}
         self._neighbor_items: list[QGraphicsLineItem] = []
         self._center_lon = self.DEFAULT_LON
+
+        # Empty-state overlay (no tiles cached → otherwise users see a
+        # black map and assume the GUI is broken). Parented to the view
+        # itself (not the viewport) so it floats above the scene.
+        self._empty_label = QLabel(self)
+        self._empty_label.setText(
+            "Nessuna tile offline disponibile.\n"
+            "Esegui scripts/download_tiles.py."
+        )
+        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_label.setStyleSheet(
+            "color: #8a92a4; font-size: 11px; background: transparent;"
+        )
+        self._empty_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self._empty_label.hide()
         self._center_lat = self.DEFAULT_LAT
 
         self.set_zoom(self._zoom, recenter=True)
@@ -174,6 +189,18 @@ class MapView(QGraphicsView):
             item.setZValue(-1)
             self._scene.addItem(item)
             self._tile_items[key] = item
+
+        # Show / hide the offline-tiles empty state.
+        if self._tile_items:
+            self._empty_label.hide()
+        else:
+            self._empty_label.setGeometry(0, 0, self.width(), self.height())
+            self._empty_label.show()
+            self._empty_label.raise_()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._empty_label.setGeometry(0, 0, self.width(), self.height())
 
     # ------------------------------------------------------------------
     # Markers

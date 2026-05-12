@@ -293,6 +293,12 @@ class Page(QWidget):
         disk_pct = data.get("disk_percent")
         if disk_pct is not None:
             self._disk_bar.setValue(int(disk_pct))
+            level = "danger" if disk_pct >= 90 else "warn" if disk_pct >= 75 else "ok"
+            if self._disk_bar.property("level") != level:
+                self._disk_bar.setProperty("level", level)
+                # Force QSS re-evaluation after property change.
+                self._disk_bar.style().unpolish(self._disk_bar)
+                self._disk_bar.style().polish(self._disk_bar)
         if data.get("disk_used_mb") is not None and data.get("disk_total_mb"):
             self._disk_value.setText(
                 f"{data['disk_used_mb']} / {data['disk_total_mb']} MB"

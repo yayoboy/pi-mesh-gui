@@ -397,6 +397,27 @@ class MinusIcon(_IconBase):
         p.drawRoundedRect(QRectF(2, 6.3, 10, 1.4), 0.7, 0.7)
 
 
+class TrashIcon(_IconBase):
+    """Trash / delete (lid + body + 2 vertical strokes)."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        # Lid bar.
+        p.drawLine(QPointF(2, 4), QPointF(12, 4))
+        # Handle on top of lid.
+        p.drawLine(QPointF(5.5, 2.2), QPointF(8.5, 2.2))
+        p.drawLine(QPointF(5.5, 2.2), QPointF(5.5, 4))
+        p.drawLine(QPointF(8.5, 2.2), QPointF(8.5, 4))
+        # Bin body (rounded rect outline).
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(QRectF(3.2, 4.6, 7.6, 7.5), 0.8, 0.8)
+        # Two inner vertical strokes.
+        p.drawLine(QPointF(5.8, 6.2), QPointF(5.8, 10.6))
+        p.drawLine(QPointF(8.2, 6.2), QPointF(8.2, 10.6))
+
+
 class MenuIcon(_IconBase):
     """Hamburger menu (3 horizontal bars)."""
 

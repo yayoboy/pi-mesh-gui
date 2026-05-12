@@ -70,6 +70,24 @@ QFrame#tabbar QToolButton:checked {{
     font-weight: bold;
 }}
 
+QProgressBar {{
+    background: {bg};
+    border: 1px solid {border};
+    border-radius: 3px;
+    height: 6px;
+    text-align: center;
+}}
+QProgressBar::chunk {{
+    background: {ok};
+    border-radius: 2px;
+}}
+QProgressBar[level="warn"]::chunk {{
+    background: {warn};
+}}
+QProgressBar[level="danger"]::chunk {{
+    background: {danger};
+}}
+
 QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
     background: {panel};
     color: {text};
