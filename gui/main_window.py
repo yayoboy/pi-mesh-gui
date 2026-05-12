@@ -179,16 +179,14 @@ class StatusBar(QFrame):
 
     async def _post_rotation(self, deg: int) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                await c.post(
-                    "http://127.0.0.1:8080/api/config/display",
-                    json={"rotation": deg},
-                )
-                # OS reboot is needed for rotation to take effect.
-                await c.post("http://127.0.0.1:8080/api/system/reboot")
+            import display_ops
+            import system_ops
+            await display_ops.set_rotation(deg)
+            # Rotation takes effect only after a reboot.
+            await system_ops.reboot()
         except Exception:
             log.exception("rotation post failed")
+            QMessageBox.warning(self, "pi-Mesh", "Failed to apply rotation.")
 
     def _take_screenshot(self) -> None:
         from datetime import datetime

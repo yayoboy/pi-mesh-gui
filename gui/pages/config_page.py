@@ -786,14 +786,12 @@ class _DisplaySection(QGroupBox):
 
     async def _fetch_display(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=2.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/config/display")
-            if r.status_code == 200:
-                d = r.json()
-                self._brightness.setValue(int(d.get("brightness", 255)))
-                self._brightness_value.setText(str(self._brightness.value()))
-                self._set_rotation_active(int(d.get("rotation", 0)))
+            import display_ops
+            d = await display_ops.get_state()
+            self._brightness.setRange(0, int(d.get("max_brightness", 255)))
+            self._brightness.setValue(int(d.get("brightness", 255)))
+            self._brightness_value.setText(str(self._brightness.value()))
+            self._set_rotation_active(int(d.get("rotation", 0)))
         except Exception:
             log.debug("display fetch failed", exc_info=True)
 
@@ -819,19 +817,16 @@ class _DisplaySection(QGroupBox):
             btn.setChecked(d == deg)
 
     async def _post_display(self, *, brightness: int | None = None, rotation: int | None = None) -> None:
-        body: dict[str, int] = {}
-        if brightness is not None:
-            body["brightness"] = brightness
-        if rotation is not None:
-            body["rotation"] = rotation
-        if not body:
+        if brightness is None and rotation is None:
             return
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=3.0) as c:
-                await c.post("http://127.0.0.1:8080/api/config/display", json=body)
+            import display_ops
+            if brightness is not None:
+                await display_ops.set_brightness(brightness)
+            if rotation is not None:
+                await display_ops.set_rotation(rotation)
         except Exception:
-            log.exception("display POST failed")
+            log.exception("display apply failed")
             QMessageBox.warning(self, "Display", "Failed to apply display change.")
 
 
