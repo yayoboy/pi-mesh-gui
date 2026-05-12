@@ -177,15 +177,13 @@ class _ApSection(QGroupBox):
 
     async def _refresh_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/config/ap/status")
-            d = r.json() if r.status_code == 200 else {}
+            import wifi_ops
+            d = await wifi_ops.ap_status()
         except Exception:
             self._status.setText("status unavailable")
             return
         if d.get("active"):
-            self._status.setText(f"AP active ({d.get('name', '?')})")
+            self._status.setText(f"AP active ({d.get('ssid', '?')})")
             self._status.setProperty("role", "ok")
         else:
             self._status.setText("AP not active")
@@ -202,11 +200,9 @@ class _ApSection(QGroupBox):
 
     async def _toggle_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=15.0) as c:
-                r = await c.post("http://127.0.0.1:8080/api/config/ap/toggle")
-            d = r.json() if r.status_code == 200 else {}
-            self._status.setText(d.get("message") or ("AP active" if d.get("active") else "AP off"))
+            import wifi_ops
+            active = await wifi_ops.ap_toggle()
+            self._status.setText("AP active" if active else "AP off")
         except Exception as exc:
             self._status.setText(f"toggle failed: {exc}")
 

@@ -149,13 +149,10 @@ class _WifiSection(QGroupBox):
     async def _scan_async(self) -> None:
         self._status.setText("scanning…")
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=20.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/config/wifi/scan")
-                networks = r.json() if r.status_code == 200 else []
+            import wifi_ops
+            networks = await wifi_ops.scan()
         except Exception:
             log.exception("wifi scan failed")
-            networks = []
             self._status.setText("scan failed")
             return
 
@@ -172,10 +169,8 @@ class _WifiSection(QGroupBox):
 
     async def _refresh_status_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/config/wifi/status")
-                d = r.json() if r.status_code == 200 else {}
+            import wifi_ops
+            d = await wifi_ops.status()
         except Exception:
             self._status.setText("status unavailable")
             return
@@ -205,19 +200,10 @@ class _WifiSection(QGroupBox):
     async def _connect_async(self, ssid: str, password: str) -> None:
         self._status.setText(f"connecting to {ssid}…")
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=30.0) as c:
-                r = await c.post(
-                    "http://127.0.0.1:8080/api/config/wifi/connect",
-                    json={"ssid": ssid, "password": password},
-                )
-            if r.status_code == 200:
-                self._status.setText(f"connected: {ssid}")
-                self._status.setProperty("role", "ok")
-            else:
-                err = r.json().get("error", "unknown error") if r.headers.get("content-type", "").startswith("application/json") else r.text
-                self._status.setText(f"connect failed: {err}")
-                self._status.setProperty("role", "danger")
+            import wifi_ops
+            await wifi_ops.connect(ssid, password)
+            self._status.setText(f"connected: {ssid}")
+            self._status.setProperty("role", "ok")
         except Exception as exc:
             self._status.setText(f"connect failed: {exc}")
             self._status.setProperty("role", "danger")
@@ -249,10 +235,8 @@ class _WifiSection(QGroupBox):
 
         async def populate():
             try:
-                import httpx
-                async with httpx.AsyncClient(timeout=5.0) as c:
-                    r = await c.get("http://127.0.0.1:8080/api/config/wifi/saved")
-                items = r.json() if r.status_code == 200 else []
+                import wifi_ops
+                items = await wifi_ops.saved()
             except Exception:
                 items = []
             for it in items:
@@ -262,9 +246,8 @@ class _WifiSection(QGroupBox):
 
         async def delete_one(name: str):
             try:
-                import httpx
-                async with httpx.AsyncClient(timeout=5.0) as c:
-                    await c.delete(f"http://127.0.0.1:8080/api/config/wifi/saved/{name}")
+                import wifi_ops
+                await wifi_ops.forget(name)
             except Exception:
                 log.exception("wifi delete failed")
 
@@ -338,16 +321,15 @@ class _WifiSection(QGroupBox):
 
         async def post():
             try:
-                import httpx
-                async with httpx.AsyncClient(timeout=15.0) as c:
-                    r = await c.post("http://127.0.0.1:8080/api/config/wifi/ip", json=body)
-                if r.status_code == 200:
-                    self._status.setText("IP config applied")
-                    self._status.setProperty("role", "ok")
-                else:
-                    err = r.text[:120]
-                    self._status.setText(f"IP failed: {err}")
-                    self._status.setProperty("role", "danger")
+                import wifi_ops
+                await wifi_ops.set_ip(
+                    method=body["method"],
+                    address=body["address"],
+                    gateway=body["gateway"],
+                    dns=body["dns"],
+                )
+                self._status.setText("IP config applied")
+                self._status.setProperty("role", "ok")
             except Exception as exc:
                 self._status.setText(f"IP error: {exc}")
                 self._status.setProperty("role", "danger")
