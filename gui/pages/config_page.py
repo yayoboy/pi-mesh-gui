@@ -505,10 +505,8 @@ class _MqttSection(QGroupBox):
 
     async def _refresh_status_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=3.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/config/mqtt/status")
-            d = r.json() if r.status_code == 200 else {}
+            import mqtt_bridge
+            d = mqtt_bridge.get_status()
         except Exception:
             d = {}
         if not d.get("available"):
