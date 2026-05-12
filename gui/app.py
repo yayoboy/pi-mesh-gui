@@ -107,6 +107,18 @@ async def _async_main(app, window) -> None:
         log.exception("bots runner failed to start")
         bots_runner = None
 
+    # MQTT bridge: forwards mesh traffic to a broker. Reads the cached
+    # config written by Config → MQTT; start() is a no-op when ``enabled``
+    # is false or paho-mqtt isn't installed.
+    try:
+        import mqtt_bridge
+        mqtt_cfg = await database.get_config_cache(cfg.DB_PATH, "mqtt") or {}
+        if cfg.MQTT_ENABLED and "enabled" not in mqtt_cfg:
+            mqtt_cfg["enabled"] = True
+        await mqtt_bridge.start(mqtt_cfg)
+    except Exception:
+        log.exception("mqtt bridge failed to start")
+
     window.show()
 
     quit_future: asyncio.Future = asyncio.Future()
@@ -116,6 +128,11 @@ async def _async_main(app, window) -> None:
         await quit_future
     finally:
         log.info("shutting down")
+        try:
+            import mqtt_bridge
+            await mqtt_bridge.stop()
+        except Exception:
+            log.exception("mqtt bridge stop failed")
         if bots_runner is not None:
             try:
                 await bots_runner.stop()

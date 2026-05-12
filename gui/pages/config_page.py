@@ -1026,14 +1026,21 @@ class Page(QWidget):
             loop.create_task(self._save_mqtt_async(params))
 
     async def _save_mqtt_async(self, params: dict) -> None:
+        # Three side effects: persist locally, push to the board's MQTT
+        # module config, and (re)start the local bridge to match.
         try:
+            import config as cfg
+            import database
             import meshtasticd_client
+            import mqtt_bridge
+            await database.set_config_cache(cfg.DB_PATH, "mqtt", params)
             await meshtasticd_client.set_mqtt_config(params)
+            await mqtt_bridge.restart(params)
         except Exception:
             log.exception("set_mqtt_config failed")
             QMessageBox.critical(self, "Config", "Failed to save MQTT config.")
             return
-        self._status.setText("MQTT config queued")
+        self._status.setText("MQTT config saved")
         self._status.setProperty("role", "ok")
         self._status.style().unpolish(self._status)
         self._status.style().polish(self._status)
