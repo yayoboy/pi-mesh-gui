@@ -95,6 +95,18 @@ exercised in CI. Walk through each on the Pi.
 - [ ] `meshtasticd_client.send_waypoint(...)` — double-tap on the map
       → Send waypoint, verify another node receives it.
 
+## MQTT bridge
+
+- [ ] Config → MQTT → Save with ``enabled`` checked: the live status
+      banner switches from "disabled" → "connecting…" → "connected".
+- [ ] Restart the GUI service, confirm the bridge auto-starts using
+      the persisted config (cached via ``database.set_config_cache('mqtt')``).
+- [ ] Config → MQTT → Save with ``enabled`` un-checked: bridge stops,
+      banner reverts to "disabled".
+- [ ] Requires ``paho-mqtt`` installed (``pip install paho-mqtt`` or
+      ``apt install python3-paho-mqtt``); banner shows
+      "paho-mqtt not installed" otherwise.
+
 ## Known limits
 
 - Reboot/poweroff and `config.txt` writes require `sudo`; the service
@@ -105,6 +117,6 @@ exercised in CI. Walk through each on the Pi.
 - `display_ops.set_rotation` edits `/boot/firmware/config.txt`. Same.
 - `wifi_ops.ap_toggle` only switches an *existing* AP profile up/down — it
   does not create one (see the snippet above).
-- The bots framework is now started by the GUI itself (no separate runner
-  service). Disabling all bots in Config still leaves the framework idle
-  but loaded.
+- The bots framework and the MQTT bridge are both now started by the GUI
+  process itself (no separate runner / bridge services). Disabling all
+  bots or unchecking MQTT in Config leaves them idle but loaded.
