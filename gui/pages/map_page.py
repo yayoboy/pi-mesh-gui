@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from gui.widgets.status_icons import FlagIcon, HexIcon, TargetIcon, icon_pixmap
+from gui.widgets.status_icons import FlagIcon, HexIcon, MinusIcon, PlusIcon, TargetIcon, icon_pixmap
 
 from gui.pages.map_math import (
     MAX_ZOOM,
@@ -390,10 +390,14 @@ class Page(QWidget):
         bar = QHBoxLayout()
         bar.setContentsMargins(6, 4, 6, 4)
         bar.setSpacing(4)
-        self._zoom_in = QPushButton("+")
-        self._zoom_out = QPushButton("−")
-        self._zoom_in.setFixedWidth(28)
-        self._zoom_out.setFixedWidth(28)
+        self._zoom_in = QPushButton(self)
+        self._zoom_in.setIcon(QIcon(icon_pixmap(PlusIcon, 18, "#cdd")))
+        self._zoom_in.setIconSize(QSize(18, 18))
+        self._zoom_out = QPushButton(self)
+        self._zoom_out.setIcon(QIcon(icon_pixmap(MinusIcon, 18, "#cdd")))
+        self._zoom_out.setIconSize(QSize(18, 18))
+        self._zoom_in.setFixedWidth(34)
+        self._zoom_out.setFixedWidth(34)
         self._zoom_label = QLabel("z5")
         self._zoom_label.setProperty("role", "muted")
         self._zoom_label.setFixedWidth(20)

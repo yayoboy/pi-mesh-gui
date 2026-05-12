@@ -378,6 +378,25 @@ class LogIcon(_IconBase):
 # ---------------------------------------------------------------------------
 
 
+class PlusIcon(_IconBase):
+    """Plain plus sign for zoom-in."""
+
+    def _draw(self, p: QPainter) -> None:
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        p.drawRoundedRect(QRectF(2, 6.3, 10, 1.4), 0.7, 0.7)
+        p.drawRoundedRect(QRectF(6.3, 2, 1.4, 10), 0.7, 0.7)
+
+
+class MinusIcon(_IconBase):
+    """Plain minus sign for zoom-out."""
+
+    def _draw(self, p: QPainter) -> None:
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        p.drawRoundedRect(QRectF(2, 6.3, 10, 1.4), 0.7, 0.7)
+
+
 class MenuIcon(_IconBase):
     """Hamburger menu (3 horizontal bars)."""
 

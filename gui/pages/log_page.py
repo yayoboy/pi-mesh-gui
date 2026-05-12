@@ -85,7 +85,7 @@ class Page(QWidget):
         export_btn.setToolTip("Export filtered lines as TSV")
         export_btn.clicked.connect(self._on_export)
         self._search = QLineEdit()
-        self._search.setPlaceholderText("Filter…")
+        self._search.setPlaceholderText("filtra log…")
         self._search.setClearButtonEnabled(True)
         self._search.textChanged.connect(self._on_filter)
         self._count = QLabel("0")
@@ -206,7 +206,7 @@ class Page(QWidget):
 
     def _update_count(self) -> None:
         n = self._view.blockCount()
-        self._count.setText(f"{n} line{'s' if n != 1 else ''}")
+        self._count.setText(f"{n} {'riga' if n == 1 else 'righe'}")
 
     # Slots --------------------------------------------------------------
 
