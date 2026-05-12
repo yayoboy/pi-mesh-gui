@@ -18,9 +18,9 @@ exercised in CI. Walk through each on the Pi.
 - [ ] `system_ops.pi_factory_reset(db_path)` — Config → Admin → Pi factory
       reset. Verify: DB + WAL/SHM gone, `data/exports`/`data/screenshots`
       purged, `data/tiles/` preserved, system reboots.
-- [ ] Verify NOPASSWD sudoers is set for `systemctl reboot/poweroff` on
-      the service user (otherwise the subprocess hangs on the password
-      prompt).
+- [ ] Run `sudo bash scripts/setup-permissions.sh` first (see the
+      "Permissions" section below). Without it the subprocess hangs
+      on the password prompt.
 
 ### `display_ops.py`
 - [ ] `display_ops.get_state()` — open Config → Display, confirm the
@@ -107,14 +107,29 @@ exercised in CI. Walk through each on the Pi.
       ``apt install python3-paho-mqtt``); banner shows
       "paho-mqtt not installed" otherwise.
 
-## Known limits
+## Permissions
 
-- Reboot/poweroff and `config.txt` writes require `sudo`; the service
-  user must have NOPASSWD sudoers entries or polkit rules.
-- `display_ops.set_brightness` writes `/sys/class/backlight/<dev>/brightness`.
-  Most distros restrict this to root — `sudo tee` fallback exists, so the
-  same sudoers note applies.
-- `display_ops.set_rotation` edits `/boot/firmware/config.txt`. Same.
+Most cat #3 wrappers need root for one specific command. Instead of
+giving the kiosk user free sudo, ship a NOPASSWD whitelist:
+
+```bash
+sudo bash scripts/setup-permissions.sh
+```
+
+This drops `/etc/sudoers.d/pimesh-gui` with exact-path entries for
+`systemctl reboot/poweroff/restart`, `tee /sys/class/backlight/*`,
+`tee /boot/firmware/config.txt`, `tee /boot/config.txt`,
+`hwclock --show --utc`, `mount` and `umount`. It also adds the
+kiosk user to the `i2c`, `gpio` and `dialout` groups so the I2C and
+GPIO test buttons work without sudo.
+
+Without this:
+- Reboot/shutdown buttons hang silently on the password prompt.
+- Brightness slider raises `PermissionError`, then the `sudo tee`
+  fallback also fails.
+- Rotation change can't rewrite `config.txt`.
+
+## Known limits
 - `wifi_ops.ap_toggle` only switches an *existing* AP profile up/down — it
   does not create one (see the snippet above).
 - The bots framework and the MQTT bridge are both now started by the GUI

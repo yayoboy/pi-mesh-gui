@@ -79,10 +79,22 @@ cd pi-mesh-gui
 On Raspberry Pi OS (Bookworm, armhf):
 
 ```bash
+# Qt runtime (PySide6 via pip on Pi 4 / x86_64; on older arches use apt
+# fallback — see install_gui_deps in setup.sh).
 sudo apt install -y python3-pyqt6 python3-pyqt6.qtsvg libqt6svg6 \
     qt6-qpa-plugins libegl1 libxcb-cursor0
+
+# Core runtime deps for the GUI.
 sudo pip3 install --break-system-packages -r requirements.txt
-sudo pip3 install --break-system-packages qasync meshtastic aiosqlite paho-mqtt
+sudo pip3 install --break-system-packages qasync meshtastic aiosqlite
+
+# Optional features (skip individually if you don't need them):
+#   nmcli         → WiFi / AP config from the GUI
+#   i2c-tools     → I2C scan section
+#   paho-mqtt     → MQTT bridge
+#   python3-gpiozero → GPIO test button
+sudo apt install -y network-manager i2c-tools python3-gpiozero
+sudo pip3 install --break-system-packages paho-mqtt
 ```
 
 > The GUI supports both PySide6 and PyQt6 via a built-in compatibility shim (`gui/_qt_shim.py`). Use whichever is available on your platform.
@@ -98,7 +110,7 @@ Key settings:
 
 ```env
 SERIAL_PATH=/dev/ttyACM0
-DB_PATH=/home/pimesh/pi-mesh-gui/data/mesh.db
+DB_PATH=data/mesh.db
 ```
 
 ### 4 — Run (test)
@@ -114,8 +126,13 @@ DISPLAY=:0 python3 -m gui
 ### 5 — Install as a system service
 
 ```bash
-sudo cp systemd/pimesh-gui.service /etc/systemd/system/
-sudo systemctl daemon-reload
+# X11, matchbox WM, console blanking off, Xwrapper, and the systemd unit:
+sudo bash scripts/setup-display.sh
+
+# NOPASSWD sudoers for the privileged paths the GUI calls
+# (systemctl reboot/poweroff, /sys/class/backlight, config.txt, mount):
+sudo bash scripts/setup-permissions.sh
+
 sudo systemctl enable --now pimesh-gui
 ```
 
