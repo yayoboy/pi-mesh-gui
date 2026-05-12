@@ -1,5 +1,4 @@
 import pytest
-from httpx import AsyncClient, ASGITransport
 from unittest.mock import patch
 
 
@@ -42,13 +41,3 @@ def mock_client():
             }
         ]
         yield {'nodes': mock_nodes, 'connected': mock_conn}
-
-
-@pytest.fixture
-async def client(mock_client):
-    """Async HTTP client for testing FastAPI app."""
-    from main import app
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url='http://test'
-    ) as ac:
-        yield ac

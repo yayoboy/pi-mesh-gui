@@ -2,7 +2,7 @@
 
 Lifecycle (mirrors ``mqtt_bridge``):
 
-  await start(db_path)        # called from main.py:lifespan
+  await start(db_path)        # called from gui/app.py:_async_main
   ...
   reload_config()             # idempotent, called when settings change
   ...

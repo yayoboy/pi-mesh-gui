@@ -1,8 +1,8 @@
 """GUI application bootstrap.
 
-Glue between Qt (`QApplication` + `qasync`), the FastAPI/uvicorn stack used
-by the web UI, the meshtasticd client and the rest of the backend. Owns the
-async lifecycle: setup → run until window closed → teardown.
+Glue between Qt (`QApplication` + `qasync`), the meshtasticd client,
+the bots runner and the rest of the backend. Owns the async lifecycle:
+setup → run until window closed → teardown.
 
 Entry point: ``python -m gui`` calls :func:`main`.
 """
@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import sys
 
 log = logging.getLogger("gui.app")
@@ -69,12 +68,8 @@ def apply_theme(app, palette_name: str = "dark", custom: dict | None = None) -> 
     app.setPalette(qp)
 
 
-async def _async_main(app, window, *, embed_uvicorn: bool) -> None:
-    """Backend setup → run until window closes → teardown.
-
-    Mirrors ``main.py:lifespan`` but lives inside the qasync-driven loop
-    so the GUI and uvicorn share one thread.
-    """
+async def _async_main(app, window) -> None:
+    """Backend setup → run until window closes → teardown."""
     import config as cfg
     import database
     import meshtasticd_client
@@ -89,8 +84,8 @@ async def _async_main(app, window, *, embed_uvicorn: bool) -> None:
 
     apply_theme(app, settings.get("display.theme", "dark") or "dark")
 
-    # Hot-reload: when display.theme changes (from the Config page or via
-    # /api/config/display_theme), re-apply the palette without restarting.
+    # Hot-reload: when display.theme changes from the Config page,
+    # re-apply the palette without restarting.
     settings.subscribe("display.theme", lambda v: apply_theme(app, (v or "dark")))
     settings.subscribe("pimesh-accent", lambda _v: apply_theme(app, settings.get("display.theme", "dark") or "dark"))
 
@@ -112,18 +107,6 @@ async def _async_main(app, window, *, embed_uvicorn: bool) -> None:
         log.exception("bots runner failed to start")
         bots_runner = None
 
-    server = None
-    if embed_uvicorn:
-        import uvicorn
-        from main import app as fastapi_app
-
-        host = os.environ.get("PIMESH_GUI_HOST", "0.0.0.0")
-        port = int(os.environ.get("PIMESH_GUI_PORT", "8080"))
-        cfg_uv = uvicorn.Config(fastapi_app, host=host, port=port, log_level="warning", loop="asyncio")
-        server = uvicorn.Server(cfg_uv)
-        background.append(asyncio.create_task(server.serve()))
-        log.info("Embedded uvicorn listening on http://%s:%d", host, port)
-
     window.show()
 
     quit_future: asyncio.Future = asyncio.Future()
@@ -133,8 +116,6 @@ async def _async_main(app, window, *, embed_uvicorn: bool) -> None:
         await quit_future
     finally:
         log.info("shutting down")
-        if server is not None:
-            server.should_exit = True
         if bots_runner is not None:
             try:
                 await bots_runner.stop()
@@ -163,11 +144,9 @@ def main() -> int:
 
     window = MainWindow()
 
-    embed_uvicorn = os.environ.get("PIMESH_GUI_EMBEDDED_UVICORN", "0") != "0"
-
     with loop:
         try:
-            loop.run_until_complete(_async_main(app, window, embed_uvicorn=embed_uvicorn))
+            loop.run_until_complete(_async_main(app, window))
         except KeyboardInterrupt:
             log.info("interrupted")
 
