@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPixmap, QWheelEvent
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QGraphicsEllipseItem,
@@ -27,6 +27,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from gui.widgets.status_icons import FlagIcon, HexIcon, TargetIcon, icon_pixmap
 
 from gui.pages.map_math import (
     MAX_ZOOM,
@@ -405,19 +407,23 @@ class Page(QWidget):
 
         # Neighbor links toggle
         self._neighbor_toggle = QToolButton(self)
-        self._neighbor_toggle.setText("⌬")
+        self._neighbor_toggle.setIcon(QIcon(icon_pixmap(HexIcon, 18, "#cdd")))
+        self._neighbor_toggle.setIconSize(QSize(18, 18))
         self._neighbor_toggle.setToolTip("Show neighbor links")
         self._neighbor_toggle.setCheckable(True)
         self._neighbor_toggle.toggled.connect(self._on_toggle_neighbors)
 
         # Recenter
-        recenter = QPushButton("⌖")
+        recenter = QPushButton(self)
+        recenter.setIcon(QIcon(icon_pixmap(TargetIcon, 18, "#cdd")))
+        recenter.setIconSize(QSize(18, 18))
         recenter.setToolTip("Center on local node")
-        recenter.setFixedWidth(28)
+        recenter.setFixedWidth(34)
 
         # Markers / waypoints list
         markers_btn = QToolButton(self)
-        markers_btn.setText("⚑")
+        markers_btn.setIcon(QIcon(icon_pixmap(FlagIcon, 18, "#cdd")))
+        markers_btn.setIconSize(QSize(18, 18))
         markers_btn.setToolTip("Custom markers / waypoints")
         markers_btn.clicked.connect(self._show_markers_dialog)
 

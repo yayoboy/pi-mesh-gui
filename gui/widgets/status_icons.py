@@ -373,6 +373,83 @@ class LogIcon(_IconBase):
 
 
 # ---------------------------------------------------------------------------
+# Page-level action icons (map toolbar, messages canned menu — replaces
+# Unicode glyphs that tofu'd on the SPI linuxfb).
+# ---------------------------------------------------------------------------
+
+
+class MenuIcon(_IconBase):
+    """Hamburger menu (3 horizontal bars)."""
+
+    def _draw(self, p: QPainter) -> None:
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        for y in (3.5, 6.5, 9.5):
+            p.drawRoundedRect(QRectF(2.5, y, 9, 1.4), 0.7, 0.7)
+
+
+class TargetIcon(_IconBase):
+    """Crosshair / recenter (concentric circle + cross hairs)."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(QPointF(7, 7), 4.0, 4.0)
+        # Cross hairs sticking out of the circle.
+        p.drawLine(QPointF(7, 1.5), QPointF(7, 3.0))
+        p.drawLine(QPointF(7, 11.0), QPointF(7, 12.5))
+        p.drawLine(QPointF(1.5, 7), QPointF(3.0, 7))
+        p.drawLine(QPointF(11.0, 7), QPointF(12.5, 7))
+        # Center dot.
+        p.setBrush(QBrush(self._color))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QPointF(7, 7), 1.0, 1.0)
+
+
+class FlagIcon(_IconBase):
+    """Map waypoint flag."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        # Pole.
+        p.drawLine(QPointF(3.5, 1.5), QPointF(3.5, 12.5))
+        # Flag (filled triangle/trapezoid).
+        p.setBrush(QBrush(self._color))
+        p.setPen(Qt.PenStyle.NoPen)
+        flag = QPolygonF([
+            QPointF(3.5, 2.2),
+            QPointF(11.5, 4.2),
+            QPointF(11.5, 7.0),
+            QPointF(3.5, 5.0),
+        ])
+        p.drawPolygon(flag)
+
+
+class HexIcon(_IconBase):
+    """Hexagonal node / neighbor-links indicator."""
+
+    def _draw(self, p: QPainter) -> None:
+        import math
+        cx, cy, r = 7.0, 7.0, 5.5
+        hexagon = QPolygonF()
+        for i in range(6):
+            ang = math.pi / 3 * i - math.pi / 6
+            hexagon.append(QPointF(cx + r * math.cos(ang), cy + r * math.sin(ang)))
+        pen = QPen(self._color, 1.2)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPolygon(hexagon)
+        # Inner dot.
+        p.setBrush(QBrush(self._color))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QPointF(cx, cy), 1.4, 1.4)
+
+
+# ---------------------------------------------------------------------------
 # Pixmap helper — render any _IconBase subclass into a QPixmap so we can
 # stuff it into a QIcon for QToolButton.setIcon() on the tab bar.
 # ---------------------------------------------------------------------------

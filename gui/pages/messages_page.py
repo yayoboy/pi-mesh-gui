@@ -11,7 +11,8 @@ import asyncio
 import logging
 import time
 
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import QSize, Qt, Slot
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -31,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from gui.pages._message_format import format_message
+from gui.widgets.status_icons import MenuIcon, icon_pixmap
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +86,8 @@ class _BroadcastView(QWidget):
         self.input.setPlaceholderText("Type a message…")
         self.input.returnPressed.connect(self._on_send)
         canned = QToolButton(self)
-        canned.setText("☰")
+        canned.setIcon(QIcon(icon_pixmap(MenuIcon, 18, "#cdd")))
+        canned.setIconSize(QSize(18, 18))
         canned.setToolTip("Canned messages")
         canned.clicked.connect(self._show_canned_menu)
         send = QPushButton("Send")
