@@ -32,7 +32,7 @@ PALETTES: dict[str, dict[str, str]] = {
         "panel":  "#0d1017",
         "border": "#1a2233",
         "text":   "#c9d1e0",
-        "muted":  "#4a5568",
+        "muted":  "#6b7a99",
         "accent": "#4a9eff",
         "ok":     "#4caf50",
         "warn":   "#ff9800",

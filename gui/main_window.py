@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt, QSize, QTimer
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -30,7 +30,23 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from gui.widgets.status_icons import BatteryIcon, ConnIcon, GpsIcon, SignalIcon
+from gui.widgets.status_icons import (
+    BatteryIcon,
+    ConfigIcon,
+    ConnIcon,
+    GpsIcon,
+    LogIcon,
+    MapIcon,
+    MessagesIcon,
+    MetricsIcon,
+    NodesIcon,
+    PowerIcon,
+    RebootIcon,
+    RotationIcon,
+    ScreenshotIcon,
+    SignalIcon,
+    icon_pixmap,
+)
 
 log = logging.getLogger(__name__)
 
@@ -38,14 +54,15 @@ log = logging.getLogger(__name__)
 # Match the web UI: 6 tabs, the 7th (Telemetry) is reachable from the node
 # detail view rather than getting its own slot. Italian labels match
 # templates/base.html.
-_TABS: list[tuple[str, str, str]] = [
-    # (label_it, module_path, single-glyph icon)
-    ("Nodi",     "gui.pages.nodes_page",    "👥"),
-    ("Mappa",    "gui.pages.map_page",      "🗺"),
-    ("Msg",      "gui.pages.messages_page", "💬"),
-    ("Config",   "gui.pages.config_page",   "⚙"),
-    ("Metriche", "gui.pages.metrics_page",  "📊"),
-    ("Log",      "gui.pages.log_page",      "≡"),
+_TABS: list[tuple[str, str, type]] = [
+    # (label_it, module_path, vector icon class — rendered via QPainter so
+    # we don't depend on font glyph availability on the Pi linuxfb)
+    ("Nodi",     "gui.pages.nodes_page",    NodesIcon),
+    ("Mappa",    "gui.pages.map_page",      MapIcon),
+    ("Msg",      "gui.pages.messages_page", MessagesIcon),
+    ("Config",   "gui.pages.config_page",   ConfigIcon),
+    ("Metriche", "gui.pages.metrics_page",  MetricsIcon),
+    ("Log",      "gui.pages.log_page",      LogIcon),
 ]
 
 # Hidden tab — accessible programmatically via show_telemetry() but not in
@@ -60,8 +77,8 @@ SCREEN_W_LANDSCAPE = 480
 SCREEN_H_LANDSCAPE = 320
 SCREEN_W_PORTRAIT  = 320
 SCREEN_H_PORTRAIT  = 480
-STATUS_H = 24
-TABBAR_H = 32
+STATUS_H = 28
+TABBAR_H = 44
 
 
 # ---------------------------------------------------------------------------
@@ -117,28 +134,29 @@ class StatusBar(QFrame):
         self._gps.set_tooltip("GPS")
         self._conn = ConnIcon(self)
         self._conn.set_tooltip("Board")
-        self._rot  = QToolButton(self)
-        self._rot.setText("⟳")
-        self._rot.setFixedSize(14, 14)
-        self._rot.setToolTip("Rotation")
+        _ACTION_COLOR = "#cdd"
+        self._rot = RotationIcon(self)
+        self._rot.set_color(_ACTION_COLOR)
+        self._rot.set_tooltip("Rotation")
+        self._rot.set_clickable(True)
         self._rot.clicked.connect(self._show_rotation_menu)
 
-        self._shot = QToolButton(self)
-        self._shot.setText("⌖")
-        self._shot.setFixedSize(14, 14)
-        self._shot.setToolTip("Screenshot")
+        self._shot = ScreenshotIcon(self)
+        self._shot.set_color(_ACTION_COLOR)
+        self._shot.set_tooltip("Screenshot")
+        self._shot.set_clickable(True)
         self._shot.clicked.connect(self._take_screenshot)
 
-        self._reboot = QToolButton(self)
-        self._reboot.setText("↻")
-        self._reboot.setFixedSize(14, 14)
-        self._reboot.setToolTip("Reboot")
+        self._reboot = RebootIcon(self)
+        self._reboot.set_color(_ACTION_COLOR)
+        self._reboot.set_tooltip("Reboot")
+        self._reboot.set_clickable(True)
         self._reboot.clicked.connect(lambda: self._confirm_system("reboot"))
 
-        self._shutdown = QToolButton(self)
-        self._shutdown.setText("⏻")
-        self._shutdown.setFixedSize(14, 14)
-        self._shutdown.setToolTip("Shutdown")
+        self._shutdown = PowerIcon(self)
+        self._shutdown.set_color(_ACTION_COLOR)
+        self._shutdown.set_tooltip("Shutdown")
+        self._shutdown.set_clickable(True)
         self._shutdown.clicked.connect(lambda: self._confirm_system("shutdown"))
 
         for w in (self._batt, self._lora, self._gps, self._conn,
@@ -231,27 +249,37 @@ class StatusBar(QFrame):
 # Tab bar
 # ---------------------------------------------------------------------------
 
-class _TabButton(QToolButton):
-    """Touch-friendly tab button: icon glyph on top, tiny label below.
+_TAB_ICON_PX = 24
+_TAB_ICON_COLOR = "#cdd"
+_TAB_ICON_COLOR_ACTIVE = "#ffcf3a"
 
-    Optionally renders a small badge in the top-right corner showing an
-    integer counter (used by the Messages tab for unread DM count).
+
+class _TabButton(QToolButton):
+    """Touch-friendly tab button: vector icon on top, label below.
+
+    Optionally renders a small badge by appending ``·N`` to the label
+    (used by the Messages tab for unread DM count).
     """
 
-    def __init__(self, label: str, glyph: str, parent=None):
+    def __init__(self, label: str, icon_cls: type, parent=None):
         super().__init__(parent)
         self.setCheckable(True)
         self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         self._label = label
-        self._glyph = glyph
+        self._icon_cls = icon_cls
         self._badge = 0
+        self._icon_normal = QIcon(icon_pixmap(icon_cls, _TAB_ICON_PX, _TAB_ICON_COLOR))
+        self._icon_active = QIcon(icon_pixmap(icon_cls, _TAB_ICON_PX, _TAB_ICON_COLOR_ACTIVE))
+        self.setIcon(self._icon_normal)
+        self.setIconSize(QSize(_TAB_ICON_PX, _TAB_ICON_PX))
         self._update_text()
         self.setMinimumHeight(TABBAR_H)
         f = self.font()
-        f.setPointSize(7)  # web UI uses 9 px CSS, we go a touch smaller for Qt metrics.
+        f.setPointSize(8)
         self.setFont(f)
         from PySide6.QtWidgets import QSizePolicy
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.toggled.connect(self._on_toggled)
 
     def set_badge(self, count: int) -> None:
         if count == self._badge:
@@ -262,15 +290,18 @@ class _TabButton(QToolButton):
     def _update_text(self) -> None:
         if self._badge:
             badge = "9+" if self._badge > 9 else str(self._badge)
-            self.setText(f"{self._glyph}·{badge}\n{self._label}")
+            self.setText(f"{self._label}·{badge}")
         else:
-            self.setText(f"{self._glyph}\n{self._label}")
+            self.setText(self._label)
+
+    def _on_toggled(self, checked: bool) -> None:
+        self.setIcon(self._icon_active if checked else self._icon_normal)
 
 
 class TabBar(QFrame):
-    """Bottom bar: 6 equal-width tabs, each ~53 px wide on a 320 px screen."""
+    """Bottom bar: 6 equal-width tabs, vector icons + label."""
 
-    def __init__(self, tabs: list[tuple[str, str, str]], on_select, parent=None):
+    def __init__(self, tabs: list[tuple[str, str, type]], on_select, parent=None):
         super().__init__(parent)
         self.setObjectName("tabbar")
         self.setFixedHeight(TABBAR_H)
@@ -279,8 +310,8 @@ class TabBar(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        for i, (label, _module, glyph) in enumerate(tabs):
-            btn = _TabButton(label, glyph, self)
+        for i, (label, _module, icon_cls) in enumerate(tabs):
+            btn = _TabButton(label, icon_cls, self)
             btn.clicked.connect(lambda _checked, idx=i: on_select(idx))
             layout.addWidget(btn, 1)  # stretch=1 → flex-1 equivalent
             self._buttons.append(btn)

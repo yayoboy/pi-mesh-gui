@@ -7,22 +7,34 @@ deliberately monochromatic and matches the SVG paths in templates/base.html.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF
-from PySide6.QtCore import QPointF
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QWidget
 
 
 class _IconBase(QWidget):
-    """14×14 monochrome icon. Subclasses implement ``_draw(painter)``."""
+    """Monochrome icon. Subclasses draw in a 14x14 coordinate space;
+    the base paintEvent scales up to DISPLAY_SIZE automatically.
 
-    SIZE = 14
+    Emits ``clicked`` on left-mouse release inside the widget so
+    consumers can use an icon as a tap target without wrapping it
+    in a QToolButton (which would force font-glyph rendering)."""
+
+    _DESIGN_SIZE = 14
+    DISPLAY_SIZE = 22
+
+    clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(QSize(self.SIZE, self.SIZE))
+        self.setFixedSize(QSize(self.DISPLAY_SIZE, self.DISPLAY_SIZE))
         self._color = QColor("#9aa")
         self._tooltip = ""
+        self._clickable = False
+
+    def set_clickable(self, clickable: bool) -> None:
+        self._clickable = bool(clickable)
+        self.setCursor(Qt.CursorShape.PointingHandCursor if self._clickable else Qt.CursorShape.ArrowCursor)
 
     def set_color(self, color: str) -> None:
         if QColor(color) == self._color:
@@ -34,10 +46,17 @@ class _IconBase(QWidget):
         self._tooltip = tooltip
         self.setToolTip(tooltip)
 
+    def mouseReleaseEvent(self, ev):
+        if self._clickable and ev.button() == Qt.MouseButton.LeftButton and self.rect().contains(ev.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(ev)
+
     def paintEvent(self, _event):
         p = QPainter(self)
         try:
             p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            scale = self.DISPLAY_SIZE / self._DESIGN_SIZE
+            p.scale(scale, scale)
             self._draw(p)
         finally:
             p.end()
@@ -127,7 +146,6 @@ class GpsIcon(_IconBase):
         self.update()
 
     def _draw(self, p: QPainter) -> None:
-        from PySide6.QtGui import QPainterPath
         pen = QPen(self._color, 1.2)
         p.setPen(pen)
         # Map 24x24 viewBox to 14x14 with a 1 px margin.
@@ -176,3 +194,202 @@ class ConnIcon(_IconBase):
         else:
             p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(2, 2, 10, 10)
+
+
+# ---------------------------------------------------------------------------
+# Status-bar action icons (clickable; replace the old text-glyph QToolButtons
+# that rendered as tofu on the Pi because the SPI linuxfb has no emoji font).
+# ---------------------------------------------------------------------------
+
+
+class RotationIcon(_IconBase):
+    """Curved arrow indicating screen rotation."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawArc(QRectF(2.5, 2.5, 9, 9), 30 * 16, 270 * 16)
+        head = QPolygonF([QPointF(10.5, 1.2), QPointF(12.5, 3.8), QPointF(8.6, 3.6)])
+        p.setBrush(QBrush(self._color))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawPolygon(head)
+
+
+class ScreenshotIcon(_IconBase):
+    """Camera silhouette."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Top notch (lens hump).
+        p.fillRect(QRectF(5, 2, 4, 1.5), QBrush(self._color))
+        # Body.
+        p.drawRoundedRect(QRectF(1.5, 3.5, 11, 8), 1.2, 1.2)
+        # Lens.
+        p.drawEllipse(QPointF(7, 7.5), 2.2, 2.2)
+
+
+class RebootIcon(_IconBase):
+    """Reset / circular arrow (counter-clockwise opening at top)."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawArc(QRectF(2.5, 2.5, 9, 9), 120 * 16, 290 * 16)
+        head = QPolygonF([QPointF(3.6, 1.4), QPointF(6.2, 3.0), QPointF(3.4, 4.6)])
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        p.drawPolygon(head)
+
+
+class PowerIcon(_IconBase):
+    """Classic power symbol: open-top arc + vertical stem."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.5)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Arc with a gap at top so the stem reads as separate.
+        p.drawArc(QRectF(2.5, 3, 9, 9), -60 * 16, -240 * 16)
+        # Stem.
+        p.drawLine(QPointF(7, 1.5), QPointF(7, 6))
+
+
+# ---------------------------------------------------------------------------
+# Tab-bar icons. Designed at 14×14 like the status icons; rendered into
+# QPixmaps by ``icon_pixmap`` for use with QToolButton.setIcon().
+# ---------------------------------------------------------------------------
+
+
+class NodesIcon(_IconBase):
+    """Three nodes connected (mesh topology)."""
+
+    def _draw(self, p: QPainter) -> None:
+        nodes = [QPointF(3, 4), QPointF(11, 4), QPointF(7, 11)]
+        pen = QPen(self._color, 0.9)
+        p.setPen(pen)
+        # Connections first so dots cover endpoints.
+        p.drawLine(nodes[0], nodes[1])
+        p.drawLine(nodes[0], nodes[2])
+        p.drawLine(nodes[1], nodes[2])
+        p.setBrush(QBrush(self._color))
+        p.setPen(Qt.PenStyle.NoPen)
+        for n in nodes:
+            p.drawEllipse(n, 1.6, 1.6)
+
+
+class MapIcon(_IconBase):
+    """Map pin (teardrop with center dot)."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        path = QPainterPath()
+        path.moveTo(7, 1.5)
+        path.cubicTo(3, 1.5, 2.5, 6.5, 7, 12.5)
+        path.cubicTo(11.5, 6.5, 11, 1.5, 7, 1.5)
+        p.drawPath(path)
+        p.setBrush(QBrush(self._color))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QPointF(7, 5.5), 1.4, 1.4)
+
+
+class MessagesIcon(_IconBase):
+    """Speech bubble with a tail."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(QRectF(1.5, 2, 11, 7.5), 1.8, 1.8)
+        # Tail pointing down-left.
+        tail = QPolygonF([QPointF(4.5, 9.4), QPointF(4.5, 12.3), QPointF(6.8, 9.4)])
+        p.setBrush(QBrush(self._color))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawPolygon(tail)
+
+
+class ConfigIcon(_IconBase):
+    """Gear (8 teeth) with a central hole."""
+
+    def _draw(self, p: QPainter) -> None:
+        import math
+        cx, cy = 7.0, 7.0
+        outer_r, inner_r = 5.8, 4.2
+        teeth = 8
+        path = QPainterPath()
+        for i in range(teeth * 2):
+            ang = math.pi * i / teeth - math.pi / 2
+            r = outer_r if i % 2 == 0 else inner_r
+            x = cx + r * math.cos(ang)
+            y = cy + r * math.sin(ang)
+            if i == 0:
+                path.moveTo(x, y)
+            else:
+                path.lineTo(x, y)
+        path.closeSubpath()
+        pen = QPen(self._color, 0.9)
+        p.setPen(pen)
+        p.setBrush(QBrush(self._color))
+        p.drawPath(path)
+        # Punch the center as a true transparent hole so the icon works on
+        # any background (tab bar pixmap, status bar widget).
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+        p.setBrush(QBrush(QColor(0, 0, 0, 255)))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QPointF(cx, cy), 1.7, 1.7)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+
+
+class MetricsIcon(_IconBase):
+    """Ascending bar chart (4 bars)."""
+
+    def _draw(self, p: QPainter) -> None:
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        heights = (3, 5, 7, 9)
+        for i, h in enumerate(heights):
+            x = 1.5 + i * 3
+            y = 12 - h
+            p.fillRect(QRectF(x, y, 2, h), QBrush(self._color))
+
+
+class LogIcon(_IconBase):
+    """Three horizontal lines (list)."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.6)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        for y in (4, 7, 10):
+            p.drawLine(QPointF(2.5, y), QPointF(11.5, y))
+
+
+# ---------------------------------------------------------------------------
+# Pixmap helper — render any _IconBase subclass into a QPixmap so we can
+# stuff it into a QIcon for QToolButton.setIcon() on the tab bar.
+# ---------------------------------------------------------------------------
+
+
+def icon_pixmap(icon_cls: type["_IconBase"], size: int = 20, color: str = "#9aa") -> QPixmap:
+    """Render ``icon_cls`` to a transparent QPixmap of side ``size`` (px)."""
+    pm = QPixmap(size, size)
+    pm.fill(Qt.GlobalColor.transparent)
+    icon = icon_cls()
+    icon._color = QColor(color)
+    p = QPainter(pm)
+    try:
+        p.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        scale = size / icon_cls._DESIGN_SIZE
+        p.scale(scale, scale)
+        icon._draw(p)
+    finally:
+        p.end()
+    return pm
