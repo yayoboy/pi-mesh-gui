@@ -196,18 +196,12 @@ class Page(QWidget):
         out_dir.mkdir(parents=True, exist_ok=True)
         safe_id = node_id.replace("/", "_").replace("!", "")
         out_path = out_dir / f"telemetry-{safe_id}-{datetime.now():%Y%m%d-%H%M%S}.{fmt}"
-        url = (
-            f"http://127.0.0.1:8080/api/export/telemetry"
-            f"?node_id={node_id}&format={fmt}&limit=2000"
-        )
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=30.0) as c:
-                r = await c.get(url)
-            if r.status_code != 200:
-                QMessageBox.warning(self, "Export", f"Export failed: {r.status_code}")
-                return
-            out_path.write_bytes(r.content)
+            import config as cfg
+            import database
+            from gui.pages.metrics_page import _serialize_telemetry_rows
+            rows = await database.get_telemetry(cfg.DB_PATH, node_id=node_id, limit=2000)
+            out_path.write_text(_serialize_telemetry_rows(rows, fmt), encoding="utf-8")
         except Exception as exc:
             QMessageBox.warning(self, "Export", f"Export error: {exc}")
             return

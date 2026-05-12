@@ -3,15 +3,18 @@
 Two stacked sections:
 - Raspberry Pi: CPU%, RAM%, Temp, Uptime (sparklines), plus disk usage bar.
 - Board Meshtastic: per-node summary cards (battery, voltage, temp,
-  humidity, pressure …) populated from /api/telemetry/latest.
+  humidity, pressure …) built from the local telemetry table.
 
-CSV / JSON export buttons hit /api/export/telemetry and stash the file
-under ``data/exports/`` for retrieval over the LAN.
+CSV / JSON export buttons write the latest rows from the telemetry
+table to ``data/exports/`` directly — no HTTP API involved.
 """
 
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
+import json
 import logging
 from pathlib import Path
 
@@ -34,11 +37,36 @@ from gui.widgets.sparkline import Sparkline
 
 log = logging.getLogger(__name__)
 
+# Refresh cadence for both the local RPi sample loop and the Board Meshtastic
+# pull. Telemetry packets typically arrive every few minutes per node, so a
+# 15 s timer is more than enough; live updates also flow in via the event bus.
+_REFRESH_MS = 15000
+
 
 def _schedule(coro) -> None:
     loop = asyncio.get_event_loop_policy().get_event_loop()
     if loop.is_running():
         loop.create_task(coro)
+
+
+def _serialize_telemetry_rows(rows: list[dict], fmt: str) -> str:
+    """Serialize telemetry rows to CSV or JSON for export."""
+    if fmt == "json":
+        return json.dumps(rows, indent=2, default=str)
+    buf = io.StringIO()
+    keys: list[str] = []
+    seen: set[str] = set()
+    for r in rows:
+        for k in (r.get("data") or {}).keys():
+            if k not in seen:
+                seen.add(k)
+                keys.append(k)
+    writer = csv.writer(buf)
+    writer.writerow(["ts", "node_id", "ttype", *keys])
+    for r in rows:
+        d = r.get("data") or {}
+        writer.writerow([r.get("ts"), r.get("node_id"), r.get("ttype"), *(d.get(k, "") for k in keys)])
+    return buf.getvalue()
 
 
 def _fmt_uptime(seconds: float | None) -> str:
@@ -241,16 +269,17 @@ class Page(QWidget):
 
         layout.addStretch(1)
 
-        # 1-second polling loop for rpi telemetry; cheap.
+        # Periodic refresh for RPi metrics and board telemetry. Both run at
+        # _REFRESH_MS; live telemetry events still trigger an immediate
+        # board refresh via the event bus below.
         self._timer = QTimer(self)
-        self._timer.setInterval(1000)
+        self._timer.setInterval(_REFRESH_MS)
         self._timer.timeout.connect(self._poll)
         self._timer.start()
         self._poll()
 
-        # Less frequent pull for /api/telemetry/latest (board side).
         self._board_timer = QTimer(self)
-        self._board_timer.setInterval(5000)
+        self._board_timer.setInterval(_REFRESH_MS)
         self._board_timer.timeout.connect(lambda: _schedule(self._refresh_board()))
         self._board_timer.start()
         _schedule(self._refresh_board())
@@ -293,23 +322,64 @@ class Page(QWidget):
 
     async def _refresh_board(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/telemetry/latest")
-            data = r.json() if r.status_code == 200 else {}
+            import config as cfg
+            import database
+            import meshtasticd_client
+            # 500 recent rows is enough to capture the latest device +
+            # environment + power + air_quality sample for every active
+            # node in the last few hours.
+            rows = await database.get_telemetry(cfg.DB_PATH, limit=500)
         except Exception:
             log.debug("board telemetry refresh failed", exc_info=True)
             return
 
-        # Reuse / create / drop cards keyed by node id.
+        nodes_by_id = {n.get("id"): n for n in meshtasticd_client.get_nodes()}
+        local_id = meshtasticd_client.get_local_id()
+
+        # Keep only the most recent row per (node_id, ttype). rows come
+        # back ts DESC, so the first match wins.
+        data: dict[str, dict] = {}
+        seen_keys: set[tuple[str, str]] = set()
+        for r in rows:
+            nid = r.get("node_id")
+            ttype = r.get("ttype")
+            if not nid or not ttype:
+                continue
+            key = (nid, ttype)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            info = data.setdefault(nid, {})
+            info[ttype] = {"ts": r.get("ts"), "data": r.get("data") or {}}
+            if "short_name" not in info:
+                n = nodes_by_id.get(nid)
+                short = (n or {}).get("short_name") if n else None
+                info["short_name"] = short or (nid if nid != local_id else "Local")
+
+        # Order: local node first, then by last device/environment ts desc.
+        def _row_ts(info: dict) -> int:
+            return max(
+                int((info.get("device") or {}).get("ts") or 0),
+                int((info.get("environment") or {}).get("ts") or 0),
+                int((info.get("power") or {}).get("ts") or 0),
+                int((info.get("air_quality") or {}).get("ts") or 0),
+            )
+        ordered = sorted(
+            data.items(),
+            key=lambda kv: (kv[0] != local_id, -_row_ts(kv[1])),
+        )
+
         seen = set()
-        for nid, info in data.items():
+        for idx, (nid, info) in enumerate(ordered):
             seen.add(nid)
             card = self._node_cards.get(nid)
             if card is None:
                 card = _NodeTelemetryCard(self._node_cards_host)
-                self._node_cards_layout.addWidget(card)
+                self._node_cards_layout.insertWidget(idx, card)
                 self._node_cards[nid] = card
+            else:
+                self._node_cards_layout.removeWidget(card)
+                self._node_cards_layout.insertWidget(idx, card)
             card.fill(info)
         for nid in list(self._node_cards.keys()):
             if nid not in seen:
@@ -328,15 +398,12 @@ class Page(QWidget):
         out_dir = Path("data/exports")
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"telemetry-{datetime.now():%Y%m%d-%H%M%S}.{fmt}"
-        url = f"http://127.0.0.1:8080/api/export/telemetry?format={fmt}&limit=1000"
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=30.0) as c:
-                r = await c.get(url)
-            if r.status_code != 200:
-                QMessageBox.warning(self, "Export", f"Export failed: {r.status_code}")
-                return
-            out_path.write_bytes(r.content)
+            import config as cfg
+            import database
+            rows = await database.get_telemetry(cfg.DB_PATH, limit=1000)
+            payload = _serialize_telemetry_rows(rows, fmt)
+            out_path.write_text(payload, encoding="utf-8")
         except Exception as exc:
             QMessageBox.warning(self, "Export", f"Export error: {exc}")
             return
