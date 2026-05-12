@@ -84,20 +84,17 @@ sudo -u "$USER" mkdir -p "$REPO_DIR/data"
 
 echo "==> Installing systemd services..."
 cp "$REPO_DIR/systemd/meshtasticd.service" /etc/systemd/system/
-cp "$REPO_DIR/systemd/pimesh.service"      /etc/systemd/system/
 cp "$REPO_DIR/systemd/pimesh-gui.service"  /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable meshtasticd pimesh
+systemctl enable meshtasticd pimesh-gui
 systemctl start  meshtasticd
 sleep 3
-systemctl start  pimesh
+systemctl start  pimesh-gui
 
 echo
 echo "==> Done."
 echo
-echo "    Web UI: http://localhost:8080  (also reachable on the LAN)"
-echo
-echo "    Native Qt kiosk (optional, replaces the surf-based kiosk):"
-echo "      sudo systemctl disable --now kiosk.service     # if currently enabled"
-echo "      sudo systemctl enable  --now pimesh-gui.service"
+echo "    Service status:"
+echo "      sudo systemctl status pimesh-gui"
+echo "      journalctl -u pimesh-gui -f"
 echo

@@ -102,8 +102,8 @@ class _DeviceSection(QGroupBox):
 class _WifiSection(QGroupBox):
     """WiFi: current status, scan/connect, saved profiles, static IP.
 
-    All hits go through the FastAPI bridge (``/api/config/wifi/*``) so the
-    GUI doesn't shell out directly. Useful even before the radio is talking.
+    Delegates to ``wifi_ops`` which wraps ``nmcli``. Useful even before
+    the radio is talking.
     """
 
     def __init__(self, parent=None):
@@ -428,7 +428,7 @@ class _MqttSection(QGroupBox):
     """MQTT bridge config: enabled, address, credentials, root prefix, flags.
 
     Header label shows the live bridge state from
-    ``/api/config/mqtt/status`` so the user can tell at a glance whether
+    ``mqtt_bridge.get_status()`` so the user can tell at a glance whether
     the bridge process is actually connected.
     """
 
@@ -660,9 +660,10 @@ class _DisplaySection(QGroupBox):
     """Theme picker + accent color + brightness + rotation.
 
     Theme/accent writes go through ``Settings.set`` which triggers the
-    hot-reload subscriber in :mod:`gui.app`. Brightness and rotation POST
-    to ``/api/config/display`` since they need OS-level effect (PWM on the
-    backlight, dtoverlay rewrite + xrandr rotate).
+    hot-reload subscriber in :mod:`gui.app`. Brightness writes
+    ``/sys/class/backlight/*/brightness`` and rotation rewrites the
+    ``dtoverlay=`` line in ``/boot/firmware/config.txt`` — see
+    :mod:`display_ops`.
     """
 
     def __init__(self, settings, parent=None):
@@ -726,7 +727,7 @@ class _DisplaySection(QGroupBox):
         layout.addLayout(rot_row)
 
         self._refresh()
-        # Async fetch of OS-level brightness/rotation via /api/config/display.
+        # Async fetch of OS-level brightness/rotation via display_ops.
         _schedule_qt(self._fetch_display())
 
     # ------------------------------------------------------------------

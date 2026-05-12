@@ -1,8 +1,9 @@
 """Config-page section for the Meshtastic bots framework.
 
 Lists every registered bot with a toggle button, plus a top-row prefix
-field. All hits go through the FastAPI bridge (``/api/bots*``); the
-backend handles persistence + reload of the in-process runner.
+field. Reads the runner state via ``bots.runner.get_state_snapshot()``
+and persists toggles + prefix through ``BotsConfig.set_enabled`` /
+``set_prefix`` — no HTTP in between.
 """
 
 from __future__ import annotations

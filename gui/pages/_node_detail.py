@@ -62,7 +62,7 @@ class NodeDetailDialog(QDialog):
         - Send DM (opens prompt → meshtasticd_client.send_text(text, node_id))
         - Remote reboot (admin) [confirm]
         - Remote factory reset (admin) [type RESET to confirm]
-        - Forget node (DELETE /api/nodes/{id}; optional purge of messages)
+        - Forget node (database.delete_node; optional purge of messages)
     """
 
     forget_requested = Signal(str)  # emitted with node_id when the user forgets
@@ -125,7 +125,7 @@ class NodeDetailDialog(QDialog):
         tr_btn.clicked.connect(self._traceroute)
         dm_btn.clicked.connect(self._send_dm)
 
-        # Admin actions — POST /api/admin/{node_id}/{op}
+        # Admin actions — meshtasticd_client.send_admin(node_id, op)
         admin = QHBoxLayout()
         tel_btn = QPushButton("Telemetry")
         reboot_btn = QPushButton("Reboot")

@@ -1,9 +1,10 @@
 """MainWindow: status bar (top, 24 px) + tab content + tab bar (bottom, 32 px).
 
-Geometry matches the web UI on the 320×480 (or 480×320 rotated) Waveshare
-SPI display: ``setFixedSize(320, 480)`` so dev runs on the desktop look like
-the kiosk. Layout flips automatically when the system display rotation is
-applied at the X server level, no Qt-side rotation needed.
+Geometry targets the 320×480 (or 480×320 rotated) Waveshare SPI display:
+``setFixedSize(320, 480)`` so dev runs on the desktop mirror the kiosk.
+Rotation is persisted by writing ``rotate=`` inside the ``dtoverlay=`` line
+of ``/boot/firmware/config.txt`` (see ``display_ops.set_rotation``); a
+reboot is required for the change to take effect.
 
 Each tab is a lazily-imported page module exposing ``Page(QWidget)`` taking
 ``(eventbus, settings)``. Lazy import keeps heavy pages (map, metrics) out

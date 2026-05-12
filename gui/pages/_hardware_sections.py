@@ -414,8 +414,9 @@ class _GpioSection(QGroupBox):
 class _SerialSection(QGroupBox):
     """Serial port selection for the Meshtastic board.
 
-    Lists ``/api/config/serial/ports`` and writes the choice via
-    ``POST /api/config/serial/port`` (persists in config.env).
+    Lists ``hardware_ops.serial_ports()`` and persists the choice via
+    ``hardware_ops.set_serial_port()`` (writes ``SERIAL_PATH`` in
+    config.env; takes effect after restart).
     """
 
     def __init__(self, parent=None):
@@ -610,8 +611,9 @@ class _MapConfigSection(QGroupBox):
 
 
 class _CannedMessagesSection(QGroupBox):
-    """CRUD list of pre-canned message texts (POST/PUT/DELETE
-    /api/canned-messages). The Messages page reads this list to populate
+    """CRUD list of pre-canned message texts. Persisted directly via
+    ``database.{get,add,update,delete}_canned_message``. The Messages
+    page reads this list to populate
     its quick-insert menu.
     """
 

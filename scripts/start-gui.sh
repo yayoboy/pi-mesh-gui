@@ -1,8 +1,6 @@
 #!/bin/bash
 # scripts/start-gui.sh — Native Qt GUI launcher (xinit target).
-# Used by systemd/pimesh-gui.service. Mutually exclusive with the web kiosk
-# (start-kiosk.sh + surf): only one of pimesh-gui.service or kiosk.service
-# should be enabled at a time.
+# Used by systemd/pimesh-gui.service.
 
 set -e
 
@@ -13,7 +11,7 @@ xset -dpms
 xset s off
 xset s noblank
 
-# Borderless WM (same as the web kiosk).
+# Borderless WM.
 matchbox-window-manager -use_titlebar no &
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,7 +25,7 @@ else
     PY="/usr/bin/python3"
 fi
 
-# Optional config (PIMESH_GUI_EMBEDDED_UVICORN, PIMESH_ORIENTATION, ...).
+# Optional config (SERIAL_PATH, DB_PATH, LOG_LEVEL, MAP_*, ALERT_*, MQTT_ENABLED).
 if [ -f "$REPO_DIR/config.env" ]; then
     set -a
     # shellcheck disable=SC1091

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# setup-display.sh — Setup display and kiosk mode for pi-Mesh
-# Installs X11, window manager, browser, and configures autostart
+# setup-display.sh — X11 + matchbox + pimesh-gui kiosk setup
+# Installs the bits the Qt GUI service needs to run on a framebuffer Pi:
+# X server, matchbox window manager, console blanking off, fbdev perms,
+# Xwrapper for non-root xinit, and the pimesh-gui systemd unit.
+#
 # Usage: sudo bash scripts/setup-display.sh [--uninstall]
 set -euo pipefail
 
@@ -11,7 +14,7 @@ err()  { echo -e "${RED}  ✗ $*${NC}"; }
 
 PIMESH_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PIMESH_USER="${PIMESH_USER:-pimesh}"
-KIOSK_SERVICE="kiosk"
+SERVICE_NAME="pimesh-gui"
 
 if [[ $EUID -ne 0 ]]; then
   err "Esegui come root: sudo bash $0"
@@ -20,22 +23,22 @@ fi
 
 # --- UNINSTALL ---
 if [[ "${1:-}" == "--uninstall" ]]; then
-  echo "▶ Rimozione kiosk mode..."
-  systemctl disable --now "$KIOSK_SERVICE" 2>/dev/null && ok "Servizio kiosk disabilitato" || skip "Servizio non attivo"
-  rm -f "/etc/systemd/system/${KIOSK_SERVICE}.service"
+  echo "▶ Rimozione GUI kiosk..."
+  systemctl disable --now "$SERVICE_NAME" 2>/dev/null && ok "Servizio $SERVICE_NAME disabilitato" || skip "Servizio non attivo"
+  rm -f "/etc/systemd/system/${SERVICE_NAME}.service"
   systemctl daemon-reload
-  ok "Kiosk mode rimosso"
+  ok "Servizio rimosso"
   exit 0
 fi
 
 echo "========================================"
-echo "  pi-Mesh — Setup Display & Kiosk"
+echo "  pi-Mesh — Setup Display & Qt GUI"
 echo "========================================"
 echo ""
 
 # --- STEP 1: Install packages ---
-echo "▶ [1/5] Installazione pacchetti X11 e browser..."
-PKGS=(xserver-xorg xinit matchbox-window-manager surf x11-xserver-utils)
+echo "▶ [1/5] Installazione pacchetti X11 e window manager..."
+PKGS=(xserver-xorg xinit matchbox-window-manager x11-xserver-utils)
 TO_INSTALL=()
 for pkg in "${PKGS[@]}"; do
   if dpkg -l "$pkg" 2>/dev/null | grep -q "^ii"; then
@@ -70,24 +73,26 @@ for grp in video input tty; do
   fi
 done
 
-# --- STEP 3: Install kiosk scripts ---
+# --- STEP 3: Install GUI launcher ---
 echo ""
-echo "▶ [3/5] Installazione script kiosk..."
+echo "▶ [3/5] Verifica launcher GUI..."
 
-# Copy start-kiosk.sh to user home
-cp "$PIMESH_DIR/scripts/start-kiosk.sh" "/home/$PIMESH_USER/start-kiosk.sh"
-chmod +x "/home/$PIMESH_USER/start-kiosk.sh"
-chown "$PIMESH_USER:$PIMESH_USER" "/home/$PIMESH_USER/start-kiosk.sh"
-ok "start-kiosk.sh installato in /home/$PIMESH_USER/"
+GUI_LAUNCHER="$PIMESH_DIR/scripts/start-gui.sh"
+if [[ -x "$GUI_LAUNCHER" ]]; then
+  ok "start-gui.sh presente e eseguibile"
+else
+  chmod +x "$GUI_LAUNCHER"
+  ok "start-gui.sh reso eseguibile"
+fi
 
 # --- STEP 4: Install systemd service ---
 echo ""
 echo "▶ [4/5] Configurazione servizio systemd..."
 
-cp "$PIMESH_DIR/scripts/kiosk.service" "/etc/systemd/system/${KIOSK_SERVICE}.service"
+cp "$PIMESH_DIR/systemd/${SERVICE_NAME}.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 systemctl daemon-reload
-systemctl enable "$KIOSK_SERVICE"
-ok "Servizio $KIOSK_SERVICE abilitato"
+systemctl enable "$SERVICE_NAME"
+ok "Servizio $SERVICE_NAME abilitato"
 
 # --- STEP 5: Display configuration ---
 echo ""
@@ -95,12 +100,13 @@ echo "▶ [5/5] Configurazione display..."
 
 # Console blanking off (keep display always on)
 CMDLINE="/boot/firmware/cmdline.txt"
+[[ -f "$CMDLINE" ]] || CMDLINE="/boot/cmdline.txt"
 if [[ -f "$CMDLINE" ]]; then
   if grep -q "consoleblank=0" "$CMDLINE"; then
     skip "Console blanking già disabilitato"
   else
     sed -i 's/$/ consoleblank=0/' "$CMDLINE"
-    ok "Console blanking disabilitato in cmdline.txt"
+    ok "Console blanking disabilitato in $(basename "$CMDLINE")"
   fi
 fi
 
@@ -131,8 +137,8 @@ echo ""
 echo "========================================"
 echo -e "  ${GREEN}Setup display completato!${NC}"
 echo ""
-echo "  Per avviare il kiosk:"
-echo "    sudo systemctl start $KIOSK_SERVICE"
+echo "  Per avviare il kiosk Qt:"
+echo "    sudo systemctl start $SERVICE_NAME"
 echo ""
 echo "  Per calibrare il touch:"
 echo "    sudo bash scripts/calibrate-touch.sh"
