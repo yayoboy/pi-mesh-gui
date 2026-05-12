@@ -1,8 +1,7 @@
 """Hardware-side Config sections: I2C scan, RTC, AP toggle, GPIO devices.
 
-All hits go through the running FastAPI bridge (``/api/config/*``) so the
-GUI process never shells out to ``i2cdetect``, ``nmcli``, ``hwclock`` etc.
-itself — that work continues to live behind the existing routers.
+Each section talks directly to the matching module (``hardware_ops``,
+``wifi_ops``, ``usb_storage``) — no HTTP bridge in between.
 """
 
 from __future__ import annotations
@@ -74,24 +73,16 @@ class _I2cSection(QGroupBox):
 
     async def _scan_async(self, bus: int) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as c:
-                r = await c.get(f"http://127.0.0.1:8080/api/config/i2c-scan?bus={bus}")
-            if r.status_code != 200:
-                self._results.setText(f"scan failed: {r.text[:120]}")
-                return
-            data = r.json()
+            import hardware_ops
+            data = await hardware_ops.i2c_scan(bus)
         except Exception as exc:
             self._results.setText(f"scan failed: {exc}")
             return
-        # Server returns either a list of addresses or a parsed grid.
-        if isinstance(data, list):
-            self._results.setText(", ".join(data) if data else "no devices")
-        elif isinstance(data, dict) and "devices" in data:
-            devs = data["devices"]
-            self._results.setText(", ".join(devs) if devs else "no devices")
-        else:
-            self._results.setText(json.dumps(data, separators=(",", ":")))
+        if data.get("error"):
+            self._results.setText(data["error"])
+            return
+        devs = data.get("devices") or []
+        self._results.setText(", ".join(devs) if devs else "no devices")
 
 
 # ---------------------------------------------------------------------------
@@ -123,10 +114,8 @@ class _RtcSection(QGroupBox):
 
     async def _refresh_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/config/rtc/status")
-            d = r.json() if r.status_code == 200 else {}
+            import hardware_ops
+            d = await hardware_ops.rtc_status()
         except Exception:
             self._status.setText("status unavailable")
             return
@@ -405,14 +394,12 @@ class _GpioSection(QGroupBox):
         dev = item.data(Qt.ItemDataRole.UserRole)
         if not dev:
             return
-        _schedule(self._test_async(dev["id"]))
+        _schedule(self._test_async(dev))
 
-    async def _test_async(self, dev_id: int) -> None:
+    async def _test_async(self, device: dict) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as c:
-                r = await c.post(f"http://127.0.0.1:8080/api/config/gpio/{dev_id}/test")
-            d = r.json() if r.status_code == 200 else {}
+            import hardware_ops
+            d = await hardware_ops.gpio_test(device)
         except Exception as exc:
             QMessageBox.warning(self, "GPIO", f"Test failed: {exc}")
             return
@@ -460,15 +447,12 @@ class _SerialSection(QGroupBox):
 
     async def _refresh_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/config/serial/ports")
-            data = r.json() if r.status_code == 200 else {}
+            import hardware_ops
+            data = await hardware_ops.serial_ports()
         except Exception:
             data = {}
-        ports = data.get("ports") if isinstance(data, dict) else data
-        ports = ports or []
-        current = data.get("current") if isinstance(data, dict) else None
+        ports = data.get("ports") or []
+        current = data.get("current")
 
         self._combo.clear()
         for p in ports:
@@ -494,21 +478,9 @@ class _SerialSection(QGroupBox):
 
     async def _save_async(self, port: str) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=10.0) as c:
-                r = await c.post(
-                    "http://127.0.0.1:8080/api/config/serial/port",
-                    json={"port": port},
-                )
-            if r.status_code == 200:
-                self._info.setText(f"applied: {port}")
-            else:
-                err = ""
-                try:
-                    err = r.json().get("error", "")
-                except Exception:
-                    err = r.text[:120]
-                self._info.setText(f"failed: {err}")
+            import hardware_ops
+            await hardware_ops.set_serial_port(port)
+            self._info.setText(f"applied: {port} (restart to use)")
         except Exception as exc:
             self._info.setText(f"error: {exc}")
 
@@ -799,41 +771,47 @@ class _UsbStorageSection(QGroupBox):
 
     async def _refresh_async(self) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.get("http://127.0.0.1:8080/api/config/usb/status")
-            d = r.json() if r.status_code == 200 else {}
+            import asyncio as _aio
+            import usb_storage
+            loop = _aio.get_running_loop()
+            d = await loop.run_in_executor(None, usb_storage.get_usb_status)
+            tiles_loc = await loop.run_in_executor(
+                None, usb_storage.get_tiles_location, "data/tiles",
+            )
         except Exception:
             self._status.setText("status unavailable")
             return
         text_parts = []
-        if d.get("mounted"):
-            text_parts.append(f"mounted at {d.get('mountpoint', '?')}")
+        first = (d.get("devices") or [None])[0]
+        if d.get("connected") and first and first.get("mountpoint"):
+            text_parts.append(f"mounted at {first['mountpoint']}")
+            if first.get("free_mb") is not None:
+                text_parts.append(f"{first['free_mb']} MB free")
         else:
             text_parts.append("no USB mounted")
-        if d.get("free_mb") is not None:
-            text_parts.append(f"{d['free_mb']} MB free")
-        if d.get("tiles_on_usb"):
+        if tiles_loc == "usb":
             text_parts.append("tiles on USB")
         self._status.setText("  ·  ".join(text_parts))
 
     def _on_move(self) -> None:
         if QMessageBox.question(self, "USB", "Move map tiles to USB?") != QMessageBox.StandardButton.Yes:
             return
-        _schedule(self._post_async("move-tiles"))
+        _schedule(self._post_async("move"))
 
     def _on_restore(self) -> None:
         if QMessageBox.question(self, "USB", "Restore tiles from USB to internal storage?") != QMessageBox.StandardButton.Yes:
             return
-        _schedule(self._post_async("restore-tiles"))
+        _schedule(self._post_async("restore"))
 
     async def _post_async(self, action: str) -> None:
         try:
-            import httpx
-            async with httpx.AsyncClient(timeout=120.0) as c:
-                r = await c.post(f"http://127.0.0.1:8080/api/config/usb/{action}")
-            if r.status_code != 200:
-                QMessageBox.warning(self, "USB", f"{action} failed: {r.text[:200]}")
+            import asyncio as _aio
+            import usb_storage
+            loop = _aio.get_running_loop()
+            fn = usb_storage.move_tiles_to_usb if action == "move" else usb_storage.restore_tiles_to_sd
+            res = await loop.run_in_executor(None, fn, "data/tiles")
+            if not res.get("ok"):
+                QMessageBox.warning(self, "USB", f"{action} failed: {res.get('error', '?')}")
                 return
         except Exception as exc:
             QMessageBox.warning(self, "USB", f"{action} error: {exc}")
