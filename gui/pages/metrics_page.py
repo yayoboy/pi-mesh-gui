@@ -12,9 +12,6 @@ table to ``data/exports/`` directly — no HTTP API involved.
 from __future__ import annotations
 
 import asyncio
-import csv
-import io
-import json
 import logging
 from pathlib import Path
 
@@ -33,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.pages._telemetry_format import serialize_telemetry_rows as _serialize_telemetry_rows
 from gui.widgets.sparkline import Sparkline
 
 log = logging.getLogger(__name__)
@@ -47,26 +45,6 @@ def _schedule(coro) -> None:
     loop = asyncio.get_event_loop_policy().get_event_loop()
     if loop.is_running():
         loop.create_task(coro)
-
-
-def _serialize_telemetry_rows(rows: list[dict], fmt: str) -> str:
-    """Serialize telemetry rows to CSV or JSON for export."""
-    if fmt == "json":
-        return json.dumps(rows, indent=2, default=str)
-    buf = io.StringIO()
-    keys: list[str] = []
-    seen: set[str] = set()
-    for r in rows:
-        for k in (r.get("data") or {}).keys():
-            if k not in seen:
-                seen.add(k)
-                keys.append(k)
-    writer = csv.writer(buf)
-    writer.writerow(["ts", "node_id", "ttype", *keys])
-    for r in rows:
-        d = r.get("data") or {}
-        writer.writerow([r.get("ts"), r.get("node_id"), r.get("ttype"), *(d.get(k, "") for k in keys)])
-    return buf.getvalue()
 
 
 def _fmt_uptime(seconds: float | None) -> str:

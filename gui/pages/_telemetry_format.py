@@ -1,7 +1,9 @@
-"""Pure formatter for telemetry rows on the Telemetry page."""
+"""Pure formatter + serializer for telemetry rows on the Telemetry page."""
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import time
 
@@ -36,3 +38,27 @@ def format_telemetry_row(row: dict, *, now: int | None = None, max_pairs: int = 
         pairs.append(f"{k}={v}")
     extra = "  ".join(pairs[:max_pairs])
     return f"[{age}] {ttype}  {extra}"
+
+
+def serialize_telemetry_rows(rows: list[dict], fmt: str) -> str:
+    """Serialize telemetry rows to CSV or JSON for export.
+
+    Pure-function variant (no Qt imports) so the export pipeline can be
+    unit-tested without PySide6 on the host.
+    """
+    if fmt == "json":
+        return json.dumps(rows, indent=2, default=str)
+    buf = io.StringIO()
+    keys: list[str] = []
+    seen: set[str] = set()
+    for r in rows:
+        for k in (r.get("data") or {}).keys():
+            if k not in seen:
+                seen.add(k)
+                keys.append(k)
+    writer = csv.writer(buf)
+    writer.writerow(["ts", "node_id", "ttype", *keys])
+    for r in rows:
+        d = r.get("data") or {}
+        writer.writerow([r.get("ts"), r.get("node_id"), r.get("ttype"), *(d.get(k, "") for k in keys)])
+    return buf.getvalue()

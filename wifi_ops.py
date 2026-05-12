@@ -109,7 +109,11 @@ async def scan(rescan: bool = True) -> list[dict]:
             sig_int = int(signal)
         except ValueError:
             sig_int = 0
-        networks.append({"ssid": ssid, "signal": sig_int, "security": sec or "open"})
+        networks.append({
+            "ssid": ssid,
+            "signal": sig_int,
+            "security": "open" if sec in ("", "--") else sec,
+        })
     networks.sort(key=lambda n: -n["signal"])
     return networks
 

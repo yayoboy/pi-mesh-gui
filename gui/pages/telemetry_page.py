@@ -199,9 +199,9 @@ class Page(QWidget):
         try:
             import config as cfg
             import database
-            from gui.pages.metrics_page import _serialize_telemetry_rows
+            from gui.pages._telemetry_format import serialize_telemetry_rows
             rows = await database.get_telemetry(cfg.DB_PATH, node_id=node_id, limit=2000)
-            out_path.write_text(_serialize_telemetry_rows(rows, fmt), encoding="utf-8")
+            out_path.write_text(serialize_telemetry_rows(rows, fmt), encoding="utf-8")
         except Exception as exc:
             QMessageBox.warning(self, "Export", f"Export error: {exc}")
             return
