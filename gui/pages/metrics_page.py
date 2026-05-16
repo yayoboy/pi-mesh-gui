@@ -47,6 +47,26 @@ def _schedule(coro) -> None:
         loop.create_task(coro)
 
 
+def _fmt_bytes_mb(mb: float | int | None) -> str:
+    """Format a megabyte count as either '123 MB' or '4.2 GB'."""
+    if mb is None:
+        return "—"
+    if mb >= 1024:
+        return f"{mb / 1024:.1f} GB"
+    return f"{int(mb)} MB"
+
+
+def _level_for(value: float | None, warn: float, danger: float) -> str | None:
+    """Return 'danger' / 'warn' / 'ok' / None based on threshold crossings."""
+    if value is None:
+        return None
+    if value >= danger:
+        return "danger"
+    if value >= warn:
+        return "warn"
+    return "ok"
+
+
 def _fmt_uptime(seconds: float | None) -> str:
     if seconds is None:
         return "—"
@@ -176,12 +196,21 @@ class Page(QWidget):
         outer.addWidget(scroll)
 
         # ---- Raspberry Pi section
+        rpi_head = QHBoxLayout()
         rpi_title = QLabel("Raspberry Pi")
         f = rpi_title.font()
         f.setPointSize(11); f.setBold(True)
         rpi_title.setFont(f)
         rpi_title.setProperty("role", "muted")
-        layout.addWidget(rpi_title)
+        rpi_head.addWidget(rpi_title)
+        rpi_head.addStretch(1)
+        self._updated_lbl = QLabel("—")
+        self._updated_lbl.setProperty("role", "muted")
+        f2 = self._updated_lbl.font()
+        f2.setPointSize(9)
+        self._updated_lbl.setFont(f2)
+        rpi_head.addWidget(self._updated_lbl)
+        layout.addLayout(rpi_head)
 
         grid = QGridLayout()
         grid.setSpacing(6)
@@ -290,19 +319,40 @@ class Page(QWidget):
             data.get("uptime_seconds"),
             formatter=lambda v: _fmt_uptime(v),
         )
+
+        # Thresholded warning levels: same QSS roles ("ok"/"warn"/"danger")
+        # the disk bar already uses, applied to the value labels too.
+        self._set_level(self._cpu, _level_for(data.get("cpu_percent"), 75, 90))
+        self._set_level(self._ram, _level_for(data.get("ram_percent"), 80, 95))
+        self._set_level(self._tmp, _level_for(data.get("cpu_temp"), 70, 80))
+
         disk_pct = data.get("disk_percent")
         if disk_pct is not None:
             self._disk_bar.setValue(int(disk_pct))
             level = "danger" if disk_pct >= 90 else "warn" if disk_pct >= 75 else "ok"
             if self._disk_bar.property("level") != level:
                 self._disk_bar.setProperty("level", level)
-                # Force QSS re-evaluation after property change.
                 self._disk_bar.style().unpolish(self._disk_bar)
                 self._disk_bar.style().polish(self._disk_bar)
         if data.get("disk_used_mb") is not None and data.get("disk_total_mb"):
             self._disk_value.setText(
-                f"{data['disk_used_mb']} / {data['disk_total_mb']} MB"
+                f"{_fmt_bytes_mb(data['disk_used_mb'])} / {_fmt_bytes_mb(data['disk_total_mb'])}"
             )
+
+        ts = data.get("ts")
+        if ts is not None and hasattr(self, "_updated_lbl"):
+            import time as _t
+            self._updated_lbl.setText(_t.strftime("%H:%M:%S", _t.localtime(ts)))
+
+    @staticmethod
+    def _set_level(card, level: str | None) -> None:
+        """Apply a 'level' QSS property to the value label inside a MetricCard."""
+        lbl = card._value
+        if lbl.property("level") == level:
+            return
+        lbl.setProperty("level", level or "")
+        lbl.style().unpolish(lbl)
+        lbl.style().polish(lbl)
 
     async def _refresh_board(self) -> None:
         try:

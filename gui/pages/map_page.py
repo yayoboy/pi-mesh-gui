@@ -459,9 +459,12 @@ class Page(QWidget):
         markers_btn.setToolTip("Marker / waypoint personalizzati")
         markers_btn.clicked.connect(self._show_markers_dialog)
 
+        # Zoom cluster ( + − z5 ) stays grouped, then a small separator gap,
+        # then layer/neighbor controls, stretch, action buttons on the right.
         bar.addWidget(self._zoom_in)
         bar.addWidget(self._zoom_out)
         bar.addWidget(self._zoom_label)
+        bar.addSpacing(8)
         bar.addWidget(self._layer_combo)
         bar.addWidget(self._neighbor_toggle)
         bar.addStretch(1)

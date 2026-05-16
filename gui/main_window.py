@@ -159,7 +159,13 @@ class StatusBar(QFrame):
                      battery: int | None = None,
                      snr: float | None = None,
                      gps_fix: bool | None = None) -> None:
-        self._name.setText(local_name or local_id or "pi-Mesh")
+        # Clamp the label width so a long local_name doesn't fight the icons
+        # for space (and end up rendered with the left side clipped off).
+        raw = local_name or local_id or "pi-Mesh"
+        fm = self._name.fontMetrics()
+        elided = fm.elidedText(raw, Qt.TextElideMode.ElideRight, 110)
+        self._name.setText(elided)
+        self._name.setToolTip(raw)
         self._conn.set_connected(connected)
         self._batt.set_level(None if battery is None else battery / 100.0)
         self._lora.set_strength(snr)

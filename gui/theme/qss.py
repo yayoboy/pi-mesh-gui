@@ -88,6 +88,10 @@ QProgressBar[level="danger"]::chunk {{
     background: {danger};
 }}
 
+QLabel[level="ok"]    {{ color: {ok}; }}
+QLabel[level="warn"]  {{ color: {warn}; }}
+QLabel[level="danger"]{{ color: {danger}; font-weight: 700; }}
+
 QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
     background: {panel};
     color: {text};
