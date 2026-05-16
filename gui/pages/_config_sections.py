@@ -339,11 +339,13 @@ class _WifiSection(QGroupBox):
 class _AdminSection(QGroupBox):
     """Destructive / system-level actions."""
 
-    def __init__(self, on_factory_reset, on_reboot, on_pi_factory_reset, parent=None):
+    def __init__(self, on_factory_reset, on_reboot, on_pi_factory_reset,
+                 on_shutdown, parent=None):
         super().__init__("Amministrazione", parent)
         self._on_factory_reset = on_factory_reset
         self._on_reboot = on_reboot
         self._on_pi_factory_reset = on_pi_factory_reset
+        self._on_shutdown = on_shutdown
 
         layout = QVBoxLayout(self)
         layout.setSpacing(4)
@@ -356,20 +358,26 @@ class _AdminSection(QGroupBox):
         info.setWordWrap(True)
         layout.addWidget(info)
 
+        # Row 1: power actions (safe — reversible on power button).
         row1 = QHBoxLayout()
         reboot_btn = QPushButton("Riavvia Pi")
         reboot_btn.clicked.connect(self._reboot_clicked)
-        radio_btn = QPushButton("Reset radio")
-        radio_btn.clicked.connect(self._factory_reset_clicked)
+        shutdown_btn = QPushButton("Spegni Pi")
+        # Distinct color so it doesn't sit next to Riavvia as a lookalike.
+        shutdown_btn.setStyleSheet("color:#ffcf3a;")
+        shutdown_btn.clicked.connect(self._shutdown_clicked)
         row1.addWidget(reboot_btn)
-        row1.addWidget(radio_btn)
+        row1.addWidget(shutdown_btn)
         layout.addLayout(row1)
 
+        # Row 2: destructive (radio + Pi factory reset).
         row2 = QHBoxLayout()
+        radio_btn = QPushButton("Reset radio")
+        radio_btn.clicked.connect(self._factory_reset_clicked)
         pi_factory_btn = QPushButton("Reset Pi")
         pi_factory_btn.setStyleSheet("color:#ef4444;")
         pi_factory_btn.clicked.connect(self._pi_factory_clicked)
-        row2.addStretch(1)
+        row2.addWidget(radio_btn)
         row2.addWidget(pi_factory_btn)
         layout.addLayout(row2)
 
@@ -380,6 +388,25 @@ class _AdminSection(QGroupBox):
         ) != QMessageBox.StandardButton.Yes:
             return
         self._on_reboot()
+
+    def _shutdown_clicked(self) -> None:
+        # Double confirmation: shutting down a kiosk means a physical
+        # power-cycle to bring it back, so make sure it's intentional.
+        first = QMessageBox.warning(
+            self, "Spegnimento",
+            "Spegnere il Raspberry Pi ora? Per riaccenderlo servirà staccare e ricollegare l'alimentazione.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if first != QMessageBox.StandardButton.Yes:
+            return
+        confirm = QMessageBox.warning(
+            self, "Spegnimento (ultima conferma)",
+            "Conferma: lo spegnimento sicuro chiude la GUI e ferma il sistema.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        self._on_shutdown()
 
     def _factory_reset_clicked(self) -> None:
         first = QMessageBox.warning(

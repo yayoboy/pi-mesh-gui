@@ -60,7 +60,8 @@ class Page(QWidget):
         self._display = _DisplaySection(self._settings, body)
         self._wifi = _WifiSection(body)
         self._admin = _AdminSection(
-            self._do_factory_reset, self._do_reboot, self._do_pi_factory_reset, body,
+            self._do_factory_reset, self._do_reboot, self._do_pi_factory_reset,
+            self._do_shutdown, body,
         )
 
         from gui.widgets.collapsible import CollapsibleSection
@@ -256,6 +257,31 @@ class Page(QWidget):
         except Exception:
             log.exception("reboot failed")
             QMessageBox.warning(self, "Amministrazione", "Impossibile riavviare.")
+
+    def _do_shutdown(self) -> None:
+        loop = asyncio.get_event_loop_policy().get_event_loop()
+        if loop.is_running():
+            loop.create_task(self._shutdown_pi())
+
+    async def _shutdown_pi(self) -> None:
+        # Give the user a visible "shutting down" status so they don't
+        # think the system froze in the seconds between request and
+        # actual poweroff (systemd takes a few seconds to flush WAL,
+        # stop services, mount-ro the FS).
+        self._status.setText("spegnimento in corso…")
+        self._status.setProperty("role", "warn")
+        self._status.style().unpolish(self._status)
+        self._status.style().polish(self._status)
+        try:
+            import system_ops
+            await system_ops.shutdown()
+        except Exception:
+            log.exception("shutdown failed")
+            QMessageBox.warning(self, "Amministrazione", "Impossibile spegnere.")
+            self._status.setText("errore spegnimento")
+            self._status.setProperty("role", "danger")
+            self._status.style().unpolish(self._status)
+            self._status.style().polish(self._status)
 
     def _do_factory_reset(self) -> None:
         loop = asyncio.get_event_loop_policy().get_event_loop()
