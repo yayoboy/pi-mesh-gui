@@ -21,6 +21,8 @@ _event_queues: list[asyncio.Queue] = []
 _loop: asyncio.AbstractEventLoop | None = None
 _traceroute_cache: dict[str, dict] = {}
 _command_queue: asyncio.Queue = asyncio.Queue()
+_command_worker_task: asyncio.Task | None = None
+_flush_worker_task: asyncio.Task | None = None
 
 import config as cfg
 import database
@@ -386,13 +388,13 @@ async def get_external_notification_config(db_path: str) -> dict:
             def _read():
                 mc = _interface.localNode.moduleConfig.external_notification
                 return {
-                    'enabled': mc.enabled,
-                    'output_pin': mc.output_pin,
-                    'active_high': mc.active_high,
-                    'alert_message': mc.alert_message,
-                    'alert_bell': mc.alert_bell,
-                    'use_pwm': mc.use_pwm,
-                    'nag_timeout': mc.nag_timeout,
+                    'enabled': getattr(mc, 'enabled', False),
+                    'output_pin': getattr(mc, 'output_pin', 0),
+                    'active_high': getattr(mc, 'active_high', False),
+                    'alert_message': getattr(mc, 'alert_message', False),
+                    'alert_bell': getattr(mc, 'alert_bell', False),
+                    'use_pwm': getattr(mc, 'use_pwm', False),
+                    'nag_timeout': getattr(mc, 'nag_timeout', 0),
                 }
             data = await loop.run_in_executor(None, _read)
             data['cached'] = False
@@ -527,10 +529,12 @@ async def get_canned_message_module_config(db_path: str) -> dict:
             loop = asyncio.get_event_loop()
             def _read():
                 mc = _interface.localNode.moduleConfig.canned_message
+                # Use getattr defaults: newer / older firmware ships
+                # protobufs with these fields renamed or absent.
                 return {
-                    'rotary1_enabled': mc.rotary1_enabled,
-                    'send_bell': mc.send_bell,
-                    'free_text_sms_enabled': mc.free_text_sms_enabled,
+                    'rotary1_enabled': getattr(mc, 'rotary1_enabled', False),
+                    'send_bell': getattr(mc, 'send_bell', False),
+                    'free_text_sms_enabled': getattr(mc, 'free_text_sms_enabled', False),
                 }
             data = await loop.run_in_executor(None, _read)
             data['cached'] = False
@@ -611,13 +615,13 @@ async def get_detection_sensor_config(db_path: str) -> dict:
             def _read():
                 mc = _interface.localNode.moduleConfig.detection_sensor
                 return {
-                    'enabled': mc.enabled,
-                    'minimum_broadcast_secs': mc.minimum_broadcast_secs,
-                    'state_broadcast_secs': mc.state_broadcast_secs,
-                    'name': mc.name,
-                    'monitor_pin': mc.monitor_pin,
-                    'use_pullup': mc.use_pullup,
-                    'detection_triggered_high': mc.detection_triggered_high,
+                    'enabled': getattr(mc, 'enabled', False),
+                    'minimum_broadcast_secs': getattr(mc, 'minimum_broadcast_secs', 0),
+                    'state_broadcast_secs': getattr(mc, 'state_broadcast_secs', 0),
+                    'name': getattr(mc, 'name', ''),
+                    'monitor_pin': getattr(mc, 'monitor_pin', 0),
+                    'use_pullup': getattr(mc, 'use_pullup', False),
+                    'detection_triggered_high': getattr(mc, 'detection_triggered_high', False),
                 }
             data = await loop.run_in_executor(None, _read)
             data['cached'] = False
@@ -749,14 +753,22 @@ async def get_serial_module_config(db_path: str) -> dict:
             loop = asyncio.get_event_loop()
             def _read():
                 mc = _interface.localNode.moduleConfig.serial
+                # mc.Mode is the enum class — on some protobuf builds it
+                # was renamed / moved; fall back to the raw int value.
+                mode_val = getattr(mc, 'mode', 0)
+                mode_enum = getattr(mc, 'Mode', None)
+                try:
+                    mode_str = mode_enum.Name(mode_val) if mode_enum else str(mode_val)
+                except Exception:
+                    mode_str = str(mode_val)
                 return {
-                    'enabled': mc.enabled,
-                    'echo': mc.echo,
-                    'rxd': mc.rxd,
-                    'txd': mc.txd,
-                    'timeout': mc.timeout,
-                    'mode': mc.Mode.Name(mc.mode),
-                    'override_console_serial_port': mc.override_console_serial_port,
+                    'enabled': getattr(mc, 'enabled', False),
+                    'echo': getattr(mc, 'echo', False),
+                    'rxd': getattr(mc, 'rxd', 0),
+                    'txd': getattr(mc, 'txd', 0),
+                    'timeout': getattr(mc, 'timeout', 0),
+                    'mode': mode_str,
+                    'override_console_serial_port': getattr(mc, 'override_console_serial_port', False),
                 }
             data = await loop.run_in_executor(None, _read)
             data['cached'] = False
@@ -1328,9 +1340,21 @@ async def connect() -> None:
     _is_connecting = True
     import meshtastic.serial_interface
     from pubsub import pub
-    _loop = asyncio.get_event_loop()    # capture event loop for threadsafe callbacks
-    asyncio.create_task(_command_worker())
-    asyncio.create_task(_flush_task())
+    _loop = asyncio.get_running_loop()  # capture event loop for threadsafe callbacks
+    # Hold strong refs and log if a worker dies — otherwise the task
+    # can be GC'd or crash silently while everything else keeps running.
+    def _log_task_done(t: asyncio.Task) -> None:
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception('background task %s crashed', t.get_name())
+    global _command_worker_task, _flush_worker_task
+    _command_worker_task = asyncio.create_task(_command_worker(), name='_command_worker')
+    _command_worker_task.add_done_callback(_log_task_done)
+    _flush_worker_task = asyncio.create_task(_flush_task(), name='_flush_task')
+    _flush_worker_task.add_done_callback(_log_task_done)
     backoff = 15
     pub.subscribe(_on_receive, 'meshtastic.receive')
     while True:

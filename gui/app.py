@@ -119,11 +119,22 @@ async def _async_main(app, window) -> None:
                 log.exception("rpi_telemetry feed iteration failed")
             await asyncio.sleep(15)
 
+    def _log_task_done(t):
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            log.exception("background task %s crashed", t.get_name())
+
     background = [
-        asyncio.create_task(meshtasticd_client.connect()),
-        asyncio.create_task(_rpi_telemetry_feed()),
+        asyncio.create_task(meshtasticd_client.connect(), name="meshtasticd-connect"),
+        asyncio.create_task(_rpi_telemetry_feed(), name="rpi-telemetry-feed"),
         bus.start(),
     ]
+    for _t in background:
+        if isinstance(_t, asyncio.Task):
+            _t.add_done_callback(_log_task_done)
 
     # Auto-reply bot framework. start() subscribes to the meshtasticd event
     # queue and dispatches incoming messages to bots that match their prefix.
