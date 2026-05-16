@@ -657,12 +657,33 @@ class Page(QWidget):
             QFormLayout,
             QLineEdit,
             QSpinBox,
+            QToolButton,
         )
         dlg = QDialog(self)
         dlg.setWindowTitle(f"Posizione  {lat:.5f}, {lon:.5f}")
         dlg.setModal(True)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        # Match the kiosk panel so the trailing buttons can't fall off.
+        win = self.window()
+        dlg.setFixedSize(win.width(), win.height())
 
-        form = QFormLayout(dlg)
+        outer = QVBoxLayout(dlg)
+        outer.setContentsMargins(8, 6, 8, 6)
+        outer.setSpacing(4)
+
+        # Header with always-visible ✕ close target — finger-sized for kiosk.
+        header = QHBoxLayout()
+        header.addWidget(QLabel(f"Posizione  {lat:.5f}, {lon:.5f}"), 1)
+        close_top = QToolButton(dlg)
+        close_top.setText("✕")
+        close_top.setToolTip("Chiudi")
+        close_top.setFixedSize(44, 44)
+        close_top.clicked.connect(dlg.reject)
+        header.addWidget(close_top, 0, Qt.AlignmentFlag.AlignTop)
+        outer.addLayout(header)
+
+        form = QFormLayout()
+        outer.addLayout(form, 1)
         form.addRow(QLabel("Aggiungi un marker locale o invia un waypoint alla mesh."))
 
         label_edit = QLineEdit()
@@ -752,13 +773,27 @@ class Page(QWidget):
             QListWidget,
             QListWidgetItem,
             QMessageBox,
+            QToolButton,
             QVBoxLayout,
         )
 
         dlg = QDialog(self)
         dlg.setWindowTitle("Marker e waypoint")
         dlg.setModal(True)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        win = self.window()
+        dlg.setFixedSize(win.width(), win.height())
         v = QVBoxLayout(dlg)
+        v.setContentsMargins(8, 6, 8, 6)
+        header = QHBoxLayout()
+        header.addWidget(QLabel("Marker e waypoint"), 1)
+        close_top = QToolButton(dlg)
+        close_top.setText("✕")
+        close_top.setToolTip("Chiudi")
+        close_top.setFixedSize(44, 44)
+        close_top.clicked.connect(dlg.reject)
+        header.addWidget(close_top, 0, Qt.AlignmentFlag.AlignTop)
+        v.addLayout(header)
         v.addWidget(QLabel("Marker personali (viola) — doppio tap per rimuovere."))
         marker_list = QListWidget()
         v.addWidget(marker_list, 1)

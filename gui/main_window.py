@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt, QSize, QTimer
+from PySide6.QtCore import Qt, QEvent, QPoint, QSize, QTimer
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtWidgets import (
     QFrame,
@@ -342,6 +342,26 @@ class MainWindow(QMainWindow):
         root.addWidget(self._tabs)
         self.setCentralWidget(central)
 
+        # Software cursor overlay: Qt's linuxfb plugin does not render
+        # the mouse pointer on the SPI tft35a framebuffer driver. Clicks
+        # still arrive but the user can't see where they are pointing.
+        # This QLabel follows mouse moves via a QApplication event filter;
+        # WA_TransparentForMouseEvents keeps clicks passing through.
+        import os as _os
+        self._sw_cursor: QLabel | None = None
+        if _os.environ.get("PIMESH_GUI_NO_CURSOR", "0") != "1":
+            self._sw_cursor = QLabel("●", self)
+            self._sw_cursor.setStyleSheet(
+                "color: #ffcf3a; background: transparent; font-size: 14px;"
+            )
+            self._sw_cursor.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            self._sw_cursor.resize(14, 14)
+            self._sw_cursor.move(-20, -20)
+            self._sw_cursor.raise_()
+            self._sw_cursor.show()
+            from PySide6.QtWidgets import QApplication
+            QApplication.instance().installEventFilter(self)
+
         # index -> (label, module_path, instance|None) for the visible tabs.
         self._pages: list[tuple[str, str, QWidget | None]] = [
             (label, module, None) for label, module, _icon in _TABS
@@ -379,6 +399,17 @@ class MainWindow(QMainWindow):
         ToastHost.for_window(self)
 
         self._select_tab(0)
+
+    def eventFilter(self, obj, event):
+        if self._sw_cursor is not None and event.type() == QEvent.Type.MouseMove:
+            try:
+                gp = event.globalPosition().toPoint()
+            except AttributeError:
+                gp = event.globalPos()
+            local = self.mapFromGlobal(gp)
+            self._sw_cursor.move(local.x() - 7, local.y() - 7)
+            self._sw_cursor.raise_()
+        return super().eventFilter(obj, event)
 
     def _select_tab(self, index: int) -> None:
         label, module_path, instance = self._pages[index]
