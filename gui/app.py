@@ -103,8 +103,25 @@ async def _async_main(app, window) -> None:
 
     bus = EventBus()
     window.attach(bus, settings)
+
+    # Periodic Pi telemetry feed. Without this nothing emits
+    # rpi_telemetry on the event bus and Log/Metrics see no host
+    # samples (each page would otherwise have to poll independently).
+    import meshtasticd_client as _mc
+
+    async def _rpi_telemetry_feed():
+        import rpi_telemetry
+        while True:
+            try:
+                data = rpi_telemetry.collect()
+                _mc._enqueue_event({"type": "rpi_telemetry", **data})
+            except Exception:
+                log.exception("rpi_telemetry feed iteration failed")
+            await asyncio.sleep(15)
+
     background = [
         asyncio.create_task(meshtasticd_client.connect()),
+        asyncio.create_task(_rpi_telemetry_feed()),
         bus.start(),
     ]
 
