@@ -33,12 +33,13 @@ def _build_qapplication():
     app.setOrganizationName("pi-Mesh")
     app.setStyle("Fusion")
 
-    # On the kiosk (linuxfb) we drive the touch screen and the mouse
-    # cursor is only ever visible when a debug USB mouse is plugged in —
-    # which leaks an X-style arrow into screenshots and partial repaints.
-    # Hide it there; keep it visible on desktop dev so PySide6 windows
-    # behave normally.
-    if app.platformName().startswith("linuxfb"):
+    # Cursor visibility on the kiosk:
+    # An earlier revision called setOverrideCursor(BlankCursor) on linuxfb
+    # to keep screenshots clean. That made the GUI unusable once a USB
+    # mouse was attached for field debugging. Now the cursor is shown by
+    # default and can be hidden explicitly with PIMESH_GUI_NO_CURSOR=1.
+    import os as _os
+    if _os.environ.get("PIMESH_GUI_NO_CURSOR") == "1":
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QCursor
         app.setOverrideCursor(QCursor(Qt.CursorShape.BlankCursor))
