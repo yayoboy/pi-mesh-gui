@@ -128,17 +128,33 @@ class MapView(QGraphicsView):
         zoom = max(MIN_ZOOM, min(MAX_ZOOM, zoom))
         if zoom == self._zoom and not recenter:
             return
+
+        # Capture the current viewport center in lon/lat before changing
+        # zoom — otherwise zooming snaps the view back to _center_lon/lat
+        # (the configured default) and loses whatever the user had panned
+        # to. Skip the capture on the very first call when the viewport
+        # isn't sized yet.
+        old_zoom = self._zoom
+        if self.viewport().width() > 0 and self.viewport().height() > 0:
+            sc = self.mapToScene(self.viewport().rect().center())
+            try:
+                lon, lat = pixel_to_lonlat(sc.x(), sc.y(), old_zoom)
+                # Only update if the projection landed somewhere sensible
+                # (not the mercator world corner = uninitialised view).
+                if -180 < lon < 180 and -85 < lat < 85:
+                    self._center_lon, self._center_lat = lon, lat
+                    recenter = True
+            except Exception:
+                pass
+
         self._zoom = zoom
         # Wipe scene and rebuild at the new zoom.
         for item in list(self._tile_items.values()):
             self._scene.removeItem(item)
         self._tile_items.clear()
 
-        # Set a sceneRect covering the whole mercator world at this zoom
-        # BEFORE centering — QGraphicsView.centerOn is a no-op when the
-        # scene has no items / no rect, which left the view stuck at
-        # scene (0,0) (= lat 85, lon -180) and visible_tiles returned
-        # tiles outside our cached bbox.
+        # Set sceneRect covering the mercator world at this zoom BEFORE
+        # centering — centerOn is a no-op without a sceneRect.
         side = (2 ** zoom) * TILE_SIZE
         self._scene.setSceneRect(0, 0, side, side)
 
