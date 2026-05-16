@@ -108,8 +108,14 @@ class Page(QWidget):
             ("Bot",                 _BotsSection(body)),
         ])
 
+        from PySide6.QtWidgets import QGroupBox
         for i, (title, widget) in enumerate(sections):
             wrap = CollapsibleSection(title, body, expanded=(i == 0))
+            # The Collapsible already shows the section title in its header.
+            # Strip the inner QGroupBox title so it isn't rendered twice.
+            if isinstance(widget, QGroupBox):
+                widget.setTitle("")
+                widget.setFlat(True)
             wrap.add_widget(widget)
             body_layout.addWidget(wrap)
 

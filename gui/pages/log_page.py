@@ -102,7 +102,11 @@ class Page(QWidget):
 
         # Portnum filter pills row (populates dynamically).
         self._pills_row = QHBoxLayout()
-        self._pills_row.setSpacing(2)
+        self._pills_row.setContentsMargins(2, 2, 2, 2)
+        self._pills_row.setSpacing(4)
+        # Trailing stretch so pills cluster left, signalling "filter chips"
+        # rather than a centered section heading.
+        self._pills_row.addStretch(1)
         layout.addLayout(self._pills_row)
 
         # The log view
@@ -166,13 +170,24 @@ class Page(QWidget):
         # Shorten APP_TEXT_MESSAGE → TEXT, etc., for the pill label.
         short = portnum.replace("_APP", "").replace("APP", "").lstrip("_")
         btn.setText(short or portnum[:6])
-        btn.setToolTip(portnum)
+        btn.setToolTip(f"Filtra per {portnum}")
         btn.setCheckable(True)
         btn.toggled.connect(lambda checked, p=portnum: self._on_pill(p, checked))
         f = btn.font()
         f.setPointSize(8)
         btn.setFont(f)
-        self._pills_row.addWidget(btn)
+        # Pill-shaped filter chip: outline when off, accent fill when on.
+        btn.setStyleSheet(
+            "QToolButton{"
+            "  border:1px solid #4a5; border-radius:9px;"
+            "  padding:1px 8px; color:#cdd; background:transparent;"
+            "}"
+            "QToolButton:checked{"
+            "  background:#ffcf3a; color:#1a1a1a; border-color:#ffcf3a;"
+            "}"
+        )
+        # Insert before the trailing stretch so pills cluster left.
+        self._pills_row.insertWidget(self._pills_row.count() - 1, btn)
 
     def _on_pill(self, portnum: str, checked: bool) -> None:
         if checked:

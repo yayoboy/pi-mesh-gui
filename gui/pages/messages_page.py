@@ -80,7 +80,19 @@ class _BroadcastView(QWidget):
         self.list.setFont(f)
         # Top "Load more" item is inserted on demand and removed once consumed.
         self.list.itemActivated.connect(self._maybe_load_more)
-        layout.addWidget(self.list, 1)
+
+        # Empty-state placeholder shown when the channel has no messages.
+        self._empty = QLabel(
+            "Nessun messaggio nel canale.\nScrivi qui sotto per iniziare."
+        )
+        self._empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty.setWordWrap(True)
+        self._empty.setProperty("role", "muted")
+
+        self._stack = QStackedWidget(self)
+        self._stack.addWidget(self.list)
+        self._stack.addWidget(self._empty)
+        layout.addWidget(self._stack, 1)
 
         comp = QHBoxLayout()
         self.input = QLineEdit(self)
@@ -121,7 +133,8 @@ class _BroadcastView(QWidget):
         for m in msgs:
             self._append(m)
         n = len(msgs)
-        self.info.setText(f"{n} {'msg' if n == 1 else 'msg'}")
+        self.info.setText(f"{n} msg")
+        self._stack.setCurrentIndex(1 if n == 0 else 0)
         self._scroll_bottom()
 
     def _add_load_more_item(self) -> None:

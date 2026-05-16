@@ -57,7 +57,7 @@ _TABS: list[tuple[str, str, type]] = [
     # we don't depend on font glyph availability on the Pi linuxfb)
     ("Nodi",     "gui.pages.nodes_page",    NodesIcon),
     ("Mappa",    "gui.pages.map_page",      MapIcon),
-    ("Msg",      "gui.pages.messages_page", MessagesIcon),
+    ("Messaggi", "gui.pages.messages_page", MessagesIcon),
     ("Config",   "gui.pages.config_page",   ConfigIcon),
     ("Metriche", "gui.pages.metrics_page",  MetricsIcon),
     ("Log",      "gui.pages.log_page",      LogIcon),

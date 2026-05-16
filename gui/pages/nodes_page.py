@@ -38,18 +38,22 @@ def _row_html(node: dict, *, now: int | None = None) -> str:
     long_name = node.get("long_name") or ""
     age = fmt_age(node.get("last_heard"), now=now)
 
+    # Inline-labelled metrics so the row is self-describing on a kiosk
+    # where there is no hover/tooltip surface.
     parts: list[str] = []
     snr = node.get("snr")
     if snr is not None:
         parts.append(f"SNR {snr:+.1f}")
     batt = node.get("battery_level")
     if batt is not None:
-        parts.append(f"{batt}%")
+        parts.append(f"bat {batt}%")
     hops = node.get("hop_count")
     if hops is not None:
-        parts.append(f"h={hops}")
-    parts.append(fmt_node(node, "dist", now=now))
-    parts.append(age)
+        parts.append(f"hop {hops}")
+    dist = fmt_node(node, "dist", now=now)
+    if dist and dist != "—":
+        parts.append(f"dist {dist}")
+    parts.append(f"vis {age}")
     sub = " · ".join(parts)
 
     weight = "700" if node.get("is_local") else "500"
