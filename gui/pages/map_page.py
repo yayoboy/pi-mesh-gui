@@ -206,6 +206,20 @@ class MapView(QGraphicsView):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._empty_label.setGeometry(0, 0, self.width(), self.height())
+        # When the page is first shown the viewport size is 0 in __init__
+        # so the initial _refresh_tiles call asks for tiles inside a 0x0
+        # window and adds nothing to the scene. Re-run once a real size
+        # is known so the map actually paints.
+        if self.width() > 0 and self.height() > 0:
+            self._refresh_tiles()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        # Also re-center on the configured default whenever the user
+        # switches back to the Mappa tab — covers the case where the
+        # widget was constructed at 0x0 and never resized afterwards.
+        if not self._tile_items and self.viewport().width() > 0:
+            self.set_zoom(self._zoom, recenter=True)
 
     # ------------------------------------------------------------------
     # Markers
