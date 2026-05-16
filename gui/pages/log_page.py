@@ -130,6 +130,10 @@ class Page(QWidget):
 
         if eventbus is not None:
             eventbus.log_line.connect(self._on_event)
+            # Also feed the local Pi telemetry into the same log stream so
+            # both halves of the device (board + host) are visible together
+            # in one place. Pi rows are tagged so they're easy to filter out.
+            eventbus.rpi_telemetry.connect(self._on_rpi_event)
 
     # ------------------------------------------------------------------
 
@@ -234,6 +238,33 @@ class Page(QWidget):
     @Slot(dict)
     def _on_event(self, event: dict) -> None:
         self._append(event)
+
+    @Slot(dict)
+    def _on_rpi_event(self, event: dict) -> None:
+        """Adapt the rpi_telemetry payload into the log-event shape so
+        format_log_line and the filter pipeline don't need to know about it."""
+        data = event.get("data") if "data" in event else event
+        parts: list[str] = []
+        cpu = data.get("cpu_percent")
+        if cpu is not None:
+            parts.append(f"CPU {cpu:.0f}%")
+        ram = data.get("ram_percent")
+        if ram is not None:
+            parts.append(f"RAM {ram:.0f}%")
+        tmp = data.get("cpu_temp")
+        if tmp is not None:
+            parts.append(f"{tmp:.1f}°C")
+        disk = data.get("disk_percent")
+        if disk is not None:
+            parts.append(f"disk {disk:.0f}%")
+        adapted = {
+            "type":    "log",
+            "ts":      data.get("ts") or event.get("ts"),
+            "from":    "[PI]",
+            "portnum": "HOST",
+            "summary": " · ".join(parts),
+        }
+        self._append(adapted)
 
     @Slot(bool)
     def _on_pause(self, paused: bool) -> None:
