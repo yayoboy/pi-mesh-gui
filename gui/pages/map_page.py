@@ -134,6 +134,14 @@ class MapView(QGraphicsView):
             self._scene.removeItem(item)
         self._tile_items.clear()
 
+        # Set a sceneRect covering the whole mercator world at this zoom
+        # BEFORE centering — QGraphicsView.centerOn is a no-op when the
+        # scene has no items / no rect, which left the view stuck at
+        # scene (0,0) (= lat 85, lon -180) and visible_tiles returned
+        # tiles outside our cached bbox.
+        side = (2 ** zoom) * TILE_SIZE
+        self._scene.setSceneRect(0, 0, side, side)
+
         if recenter:
             cx, cy = lonlat_to_pixel(self._center_lon, self._center_lat, zoom)
             self.centerOn(cx, cy)
@@ -166,9 +174,6 @@ class MapView(QGraphicsView):
         vp = self.viewport().size()
         # Center in scene coords:
         scene_center = self.mapToScene(self.viewport().rect().center())
-        # Convert back to lon/lat to feed visible_tiles().
-        # (We don't strictly need lon/lat: we could compute tile bounds from
-        # scene_center directly — but visible_tiles is the API we have.)
         from gui.pages.map_math import pixel_to_lonlat
         lon, lat = pixel_to_lonlat(scene_center.x(), scene_center.y(), self._zoom)
 
@@ -414,12 +419,49 @@ class MapView(QGraphicsView):
         self.set_zoom(new_zoom, recenter=True)
         ev.accept()
 
-    # Double-click → emit a (lon, lat) signal for the page to handle.
-    def mouseDoubleClickEvent(self, ev) -> None:
-        scene_p = self.mapToScene(ev.pos())
+    # Long-press → emit a (lon, lat) signal for the page to handle.
+    # We deliberately avoid mouseDoubleClickEvent here: on the
+    # touchscreen libinput dispatches a single finger tap as a fast
+    # press+release sequence that Qt's gesture filter would happily
+    # promote to a double-click, so panning the map by drag landed on
+    # the marker dialog. A hold timer started in mousePressEvent and
+    # cancelled by mouseMoveEvent / mouseReleaseEvent matches the
+    # universal "long-press = context action" gesture.
+    _LONG_PRESS_MS = 600
+    _LONG_PRESS_MOVE_PX = 8
+
+    def mousePressEvent(self, ev) -> None:
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self._press_pos = ev.position().toPoint() if hasattr(ev, 'position') else ev.pos()
+            self._long_press_timer = QTimer(self)
+            self._long_press_timer.setSingleShot(True)
+            self._long_press_timer.timeout.connect(self._on_long_press_timeout)
+            self._long_press_timer.start(self._LONG_PRESS_MS)
+        super().mousePressEvent(ev)
+
+    def mouseMoveEvent(self, ev) -> None:
+        # Cancel pending long-press if the finger drifts (= user is panning).
+        t = getattr(self, '_long_press_timer', None)
+        if t is not None and t.isActive():
+            start = getattr(self, '_press_pos', None)
+            cur = ev.position().toPoint() if hasattr(ev, 'position') else ev.pos()
+            if start is None or (abs(cur.x() - start.x()) + abs(cur.y() - start.y())) > self._LONG_PRESS_MOVE_PX:
+                t.stop()
+        super().mouseMoveEvent(ev)
+
+    def mouseReleaseEvent(self, ev) -> None:
+        t = getattr(self, '_long_press_timer', None)
+        if t is not None and t.isActive():
+            t.stop()
+        super().mouseReleaseEvent(ev)
+
+    def _on_long_press_timeout(self) -> None:
+        pos = getattr(self, '_press_pos', None)
+        if pos is None:
+            return
+        scene_p = self.mapToScene(pos)
         lon, lat = pixel_to_lonlat(scene_p.x(), scene_p.y(), self._zoom)
         self.location_double_clicked.emit(float(lon), float(lat))
-        ev.accept()
 
 
 class Page(QWidget):
