@@ -42,19 +42,25 @@ _MAX_LINES = 2000
 def format_log_line(event: dict) -> str:
     """Render a log event dict as a single human-readable line.
 
-    Mirrors the columns shown in the existing web UI: time placeholder
-    delegated to the GUI clock, then "from • SNR • portnum • details".
+    Columns: "HH:MM:SS · from · SNR · portnum · summary".
+    summary is the decoded payload preview built by
+    meshtasticd_client._build_log_summary; without it every periodic
+    TELEMETRY_APP packet looked identical on screen.
     """
+    import time as _t
+    ts = event.get("ts")
+    ts_s = _t.strftime("%H:%M:%S", _t.localtime(ts)) if ts else "--:--:--"
     src = event.get("from") or event.get("id") or "?"
     snr = event.get("snr")
-    snr_s = f"SNR {snr:+.1f}" if isinstance(snr, (int, float)) else "SNR ?"
+    snr_s = f"SNR {snr:+.1f}" if isinstance(snr, (int, float)) else "SNR —"
     port = event.get("portnum") or event.get("decoded_portnum") or "?"
-    extra = ""
-    if event.get("hop_limit") is not None:
-        extra += f" hops={event['hop_limit']}"
-    if event.get("text"):
-        extra += f" \"{event['text']}\""
-    return f"{src} · {snr_s} · {port}{extra}"
+    # Shorten portnum: TELEMETRY_APP → TELEMETRY, TEXT_MESSAGE_APP → TEXT.
+    port_short = port.replace("_APP", "").replace("APP", "").lstrip("_") or port
+    parts = [ts_s, src, snr_s, port_short]
+    summary = event.get("summary") or event.get("text") or ""
+    if summary:
+        parts.append(summary)
+    return " · ".join(parts)
 
 
 class Page(QWidget):
