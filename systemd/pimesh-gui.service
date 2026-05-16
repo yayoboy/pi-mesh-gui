@@ -8,13 +8,13 @@ Conflicts=kiosk.service
 User=root
 WorkingDirectory=/home/pimesh/pi-mesh-gui
 Environment=QT_QPA_PLATFORM=linuxfb:fb=/dev/fb1
-# Input plugins: dedicated evdevtouch for the ADS7846 SPI touchscreen so
-# Qt receives proper QTouchEvent (and synthesizes mouse events from them),
-# plus evdevmouse for the USB mouse and evdevkeyboard for the virtual kbd.
-# Bind evdevtouch to the specific device node to skip the auto-scan that
-# can latch onto the wrong device. _swapxy/_inverty land on the rotated
-# 480x320 portrait orientation of the 3.5" panel.
-Environment=QT_QPA_GENERIC_PLUGINS=evdevmouse,evdevkeyboard,evdevtouch:/dev/input/event2:rotate=90
+# Input handling via libinput (single plugin, handles mouse + touch +
+# keyboard). evdevtouch was unusable here because the ADS7846 kernel
+# driver does not expose ABS_MT_POSITION_{X,Y} ranges, so mtdev
+# reported min=max=0 and every tap was mapped to (0,0). libinput
+# classifies the device correctly as a touchscreen and supplies its
+# own coordinate transform.
+Environment=QT_QPA_GENERIC_PLUGINS=libinput
 # Show the software mouse cursor on the framebuffer (explicit; Qt's
 # default is to show it but some Pi distros ship with it suppressed).
 Environment=QT_QPA_FB_HIDECURSOR=0
