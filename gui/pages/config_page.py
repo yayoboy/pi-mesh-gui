@@ -125,17 +125,33 @@ class Page(QWidget):
             loop.create_task(self._reload_async())
 
     async def _reload_async(self) -> None:
+        import config as cfg
+        import meshtasticd_client
+        # Parallel fetch with a hard timeout — otherwise a stuck radio I/O
+        # leaves the status label on "caricamento…" forever.
         try:
-            import config as cfg
-            import meshtasticd_client
-            node = await meshtasticd_client.get_node_config(cfg.DB_PATH)
-            lora = await meshtasticd_client.get_lora_config(cfg.DB_PATH)
-            channels = await meshtasticd_client.get_channels(cfg.DB_PATH)
-            mqtt = await meshtasticd_client.get_mqtt_config(cfg.DB_PATH)
+            node, lora, channels, mqtt = await asyncio.wait_for(
+                asyncio.gather(
+                    meshtasticd_client.get_node_config(cfg.DB_PATH),
+                    meshtasticd_client.get_lora_config(cfg.DB_PATH),
+                    meshtasticd_client.get_channels(cfg.DB_PATH),
+                    meshtasticd_client.get_mqtt_config(cfg.DB_PATH),
+                ),
+                timeout=8.0,
+            )
+        except asyncio.TimeoutError:
+            log.warning("config reload timed out")
+            self._status.setText("timeout (radio non risponde)")
+            self._status.setProperty("role", "warn")
+            self._status.style().unpolish(self._status)
+            self._status.style().polish(self._status)
+            return
         except Exception:
             log.exception("config reload failed")
             self._status.setText("errore caricamento config")
             self._status.setProperty("role", "danger")
+            self._status.style().unpolish(self._status)
+            self._status.style().polish(self._status)
             return
 
         cached = node.get("cached") or lora.get("cached") or mqtt.get("cached")

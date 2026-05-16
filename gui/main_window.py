@@ -40,8 +40,6 @@ from gui.widgets.status_icons import (
     MessagesIcon,
     MetricsIcon,
     NodesIcon,
-    PowerIcon,
-    RebootIcon,
     RotationIcon,
     ScreenshotIcon,
     SignalIcon,
@@ -147,20 +145,11 @@ class StatusBar(QFrame):
         self._shot.set_clickable(True)
         self._shot.clicked.connect(self._take_screenshot)
 
-        self._reboot = RebootIcon(self)
-        self._reboot.set_color(_ACTION_COLOR)
-        self._reboot.set_tooltip("Riavvia")
-        self._reboot.set_clickable(True)
-        self._reboot.clicked.connect(lambda: self._confirm_system("reboot"))
-
-        self._shutdown = PowerIcon(self)
-        self._shutdown.set_color(_ACTION_COLOR)
-        self._shutdown.set_tooltip("Spegni")
-        self._shutdown.set_clickable(True)
-        self._shutdown.clicked.connect(lambda: self._confirm_system("shutdown"))
-
+        # Reboot/shutdown intentionally NOT in the status bar — too easy to
+        # tap by accident on the touchscreen. Both actions are available in
+        # Config → Amministrazione with double-confirmation.
         for w in (self._batt, self._lora, self._gps, self._conn,
-                  self._rot, self._shot, self._reboot, self._shutdown):
+                  self._rot, self._shot):
             root.addWidget(w)
 
     # ------------------------------------------------------------------
@@ -221,30 +210,6 @@ class StatusBar(QFrame):
         out.parent.mkdir(parents=True, exist_ok=True)
         pm.save(str(out), "PNG")
         log.info("screenshot saved to %s", out)
-
-    def _confirm_system(self, action: str) -> None:
-        msg = "Riavviare il sistema?" if action == "reboot" else "Spegnere il sistema?"
-        if QMessageBox.question(self, "pi-Mesh", msg) != QMessageBox.StandardButton.Yes:
-            return
-        import asyncio
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._post_system_action(action))
-
-    async def _post_system_action(self, action: str) -> None:
-        try:
-            import system_ops
-            if action == "reboot":
-                await system_ops.reboot()
-            elif action == "shutdown":
-                await system_ops.shutdown()
-            else:
-                raise ValueError(f"unknown system action: {action}")
-        except Exception:
-            log.exception("system action %s failed", action)
-            it = {"reboot": "Riavvio", "shutdown": "Spegnimento"}.get(action, action)
-            QMessageBox.warning(self, "pi-Mesh", f"{it} fallito.")
-
 
 # ---------------------------------------------------------------------------
 # Tab bar
