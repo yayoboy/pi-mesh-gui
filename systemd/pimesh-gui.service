@@ -15,9 +15,10 @@ Environment=QT_QPA_PLATFORM=linuxfb:fb=/dev/fb1
 # classifies the device correctly as a touchscreen and supplies its
 # own coordinate transform.
 Environment=QT_QPA_GENERIC_PLUGINS=libinput
-# Show the software mouse cursor on the framebuffer (explicit; Qt's
-# default is to show it but some Pi distros ship with it suppressed).
-Environment=QT_QPA_FB_HIDECURSOR=0
+# DO NOT set QT_QPA_FB_HIDECURSOR. Per Qt 6 docs, linuxfb checks the
+# *presence* of the variable (not its value), so even
+# QT_QPA_FB_HIDECURSOR=0 hides the cursor. The variable must be unset
+# to keep the native software cursor visible.
 Environment=HOME=/home/pimesh
 Environment=PIMESH_GUI_EMBEDDED_UVICORN=0
 ExecStartPre=/bin/sleep 3

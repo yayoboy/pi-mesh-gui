@@ -342,28 +342,10 @@ class MainWindow(QMainWindow):
         root.addWidget(self._tabs)
         self.setCentralWidget(central)
 
-        # Software cursor overlay: Qt's linuxfb plugin does not render the
-        # mouse pointer on the SPI tft35a framebuffer driver. Clicks still
-        # arrive but the user can't see where they are pointing.
-        # Parented to MainWindow on purpose: a top-level overlay on linuxfb
-        # produced ghost trails because the framebuffer driver doesn't
-        # invalidate the old rect on widget move. As a parented widget the
-        # parent repaint cleans up after each move, at the cost of being
-        # hidden under modal QDialogs (acceptable tradeoff).
-        import os as _os
-        self._sw_cursor: QLabel | None = None
-        if _os.environ.get("PIMESH_GUI_NO_CURSOR", "0") != "1":
-            self._sw_cursor = QLabel("●", self)
-            self._sw_cursor.setStyleSheet(
-                "color: #ffcf3a; background: transparent; font-size: 14px;"
-            )
-            self._sw_cursor.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-            self._sw_cursor.resize(14, 14)
-            self._sw_cursor.move(-20, -20)
-            self._sw_cursor.raise_()
-            self._sw_cursor.show()
-            from PySide6.QtWidgets import QApplication
-            QApplication.instance().installEventFilter(self)
+        # The software cursor is rendered by Qt's linuxfb QPA plugin
+        # itself, provided QT_QPA_FB_HIDECURSOR is NOT set (per Qt 6
+        # docs: presence of the env var hides the cursor regardless of
+        # value). No application-side overlay needed.
 
         # index -> (label, module_path, instance|None) for the visible tabs.
         self._pages: list[tuple[str, str, QWidget | None]] = [
@@ -402,17 +384,6 @@ class MainWindow(QMainWindow):
         ToastHost.for_window(self)
 
         self._select_tab(0)
-
-    def eventFilter(self, obj, event):
-        if self._sw_cursor is not None and event.type() == QEvent.Type.MouseMove:
-            try:
-                gp = event.globalPosition().toPoint()
-            except AttributeError:
-                gp = event.globalPos()
-            local = self.mapFromGlobal(gp)
-            self._sw_cursor.move(local.x() - 7, local.y() - 7)
-            self._sw_cursor.raise_()
-        return super().eventFilter(obj, event)
 
     def _select_tab(self, index: int) -> None:
         label, module_path, instance = self._pages[index]
