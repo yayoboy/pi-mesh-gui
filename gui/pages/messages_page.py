@@ -89,7 +89,7 @@ class _BroadcastView(QWidget):
         canned = QToolButton(self)
         canned.setIcon(QIcon(icon_pixmap(MenuIcon, 18, "#cdd")))
         canned.setIconSize(QSize(18, 18))
-        canned.setToolTip("Canned messages")
+        canned.setToolTip("Messaggi preimpostati")
         canned.clicked.connect(self._show_canned_menu)
         send = QPushButton("Invia")
         send.clicked.connect(self._on_send)
@@ -190,7 +190,7 @@ class _BroadcastView(QWidget):
 
     def _on_clear(self) -> None:
         if QMessageBox.question(
-            self, "Messages", "Clear all message history (broadcast + DM)?",
+            self, "Messaggi", "Svuotare tutta la cronologia (broadcast + DM)?",
         ) != QMessageBox.StandardButton.Yes:
             return
         _schedule(self._clear_async())
@@ -217,7 +217,7 @@ class _BroadcastView(QWidget):
             items = []
         if not items:
             from gui.widgets.toast import show_toast
-            show_toast(self, "No canned messages — add some in Config", role="warn")
+            show_toast(self, "Nessun messaggio preimpostato — aggiungili in Config", role="warn")
             return
         menu = QMenu(self)
         for it in items:
@@ -294,7 +294,7 @@ class _DmView(QWidget):
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
         ll.setSpacing(2)
-        ll.addWidget(QLabel("Threads"))
+        ll.addWidget(QLabel("Conversazioni"))
         self.threads = QListWidget(left)
         self.threads.itemSelectionChanged.connect(self._on_thread_selected)
         ll.addWidget(self.threads, 1)
@@ -305,7 +305,7 @@ class _DmView(QWidget):
         rl = QVBoxLayout(right)
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(2)
-        self.peer_lbl = QLabel("(select a thread)")
+        self.peer_lbl = QLabel("(seleziona una conversazione)")
         self.peer_lbl.setProperty("role", "muted")
         rl.addWidget(self.peer_lbl)
         self.msgs = QListWidget(right)
@@ -317,7 +317,7 @@ class _DmView(QWidget):
 
         comp = QHBoxLayout()
         self.input = QLineEdit(right)
-        self.input.setPlaceholderText("Type a DM…")
+        self.input.setPlaceholderText("Scrivi un DM…")
         self.input.returnPressed.connect(self._on_send)
         send = QPushButton("Invia")
         send.clicked.connect(self._on_send)
@@ -350,7 +350,7 @@ class _DmView(QWidget):
         for t in threads:
             label = t.get("short_name") or t.get("peer_id") or "?"
             unread = t.get("unread") or 0
-            text = f"{label}  ({unread} new)" if unread else label
+            text = f"{label}  ({unread} nuovi)" if unread else label
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, t.get("peer_id"))
             if unread:

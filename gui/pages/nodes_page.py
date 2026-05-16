@@ -91,7 +91,7 @@ class Page(QWidget):
         refresh.setIcon(QIcon(icon_pixmap(RotationIcon, 18, "#cdd")))
         refresh.setIconSize(QSize(18, 18))
         refresh.setToolTip("Aggiorna")
-        refresh.setFixedWidth(36)
+        refresh.setFixedWidth(44)
         refresh.clicked.connect(self._refresh)
         head.addWidget(refresh)
         layout.addLayout(head)

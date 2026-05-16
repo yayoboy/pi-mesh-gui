@@ -76,13 +76,13 @@ class Page(QWidget):
         bar = QHBoxLayout()
         self._auto = QCheckBox("Auto")
         self._auto.setChecked(True)
-        self._pause_btn = QPushButton("Pause")
+        self._pause_btn = QPushButton("Pausa")
         self._pause_btn.setCheckable(True)
         self._pause_btn.toggled.connect(self._on_pause)
-        clear = QPushButton("Clear")
+        clear = QPushButton("Pulisci")
         clear.clicked.connect(self._on_clear)
         export_btn = QPushButton("TSV")
-        export_btn.setToolTip("Export filtered lines as TSV")
+        export_btn.setToolTip("Esporta righe filtrate come TSV")
         export_btn.clicked.connect(self._on_export)
         self._search = QLineEdit()
         self._search.setPlaceholderText("filtra log…")
@@ -253,7 +253,7 @@ class Page(QWidget):
                         f"{(ev.get('text') or '').replace(chr(9), ' ')}\n"
                     )
         except Exception as exc:
-            QMessageBox.warning(self, "Log", f"Export failed: {exc}")
+            QMessageBox.warning(self, "Log", f"Esportazione fallita: {exc}")
             return
         from gui.widgets.toast import show_toast
         show_toast(self, f"Saved {out_path.name}", role="ok")

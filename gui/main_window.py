@@ -127,17 +127,17 @@ class StatusBar(QFrame):
         # Vector icons drawn with QPainter so we don't depend on font
         # glyph availability (Unicode emojis varied across distros).
         self._batt = BatteryIcon(self)
-        self._batt.set_tooltip("Battery")
+        self._batt.set_tooltip("Batteria")
         self._lora = SignalIcon(self)
-        self._lora.set_tooltip("LoRa signal")
+        self._lora.set_tooltip("Segnale LoRa")
         self._gps = GpsIcon(self)
         self._gps.set_tooltip("GPS")
         self._conn = ConnIcon(self)
-        self._conn.set_tooltip("Board")
+        self._conn.set_tooltip("Radio")
         _ACTION_COLOR = "#cdd"
         self._rot = RotationIcon(self)
         self._rot.set_color(_ACTION_COLOR)
-        self._rot.set_tooltip("Rotation")
+        self._rot.set_tooltip("Rotazione")
         self._rot.set_clickable(True)
         self._rot.clicked.connect(self._show_rotation_menu)
 
@@ -149,13 +149,13 @@ class StatusBar(QFrame):
 
         self._reboot = RebootIcon(self)
         self._reboot.set_color(_ACTION_COLOR)
-        self._reboot.set_tooltip("Reboot")
+        self._reboot.set_tooltip("Riavvia")
         self._reboot.set_clickable(True)
         self._reboot.clicked.connect(lambda: self._confirm_system("reboot"))
 
         self._shutdown = PowerIcon(self)
         self._shutdown.set_color(_ACTION_COLOR)
-        self._shutdown.set_tooltip("Shutdown")
+        self._shutdown.set_tooltip("Spegni")
         self._shutdown.set_clickable(True)
         self._shutdown.clicked.connect(lambda: self._confirm_system("shutdown"))
 
@@ -187,8 +187,8 @@ class StatusBar(QFrame):
 
     def _set_rotation(self, deg: int) -> None:
         if QMessageBox.question(
-            self, "Rotation",
-            f"Rotate to {deg}° and reboot?",
+            self, "Rotazione",
+            f"Ruotare a {deg}° e riavviare?",
         ) != QMessageBox.StandardButton.Yes:
             return
         import asyncio
@@ -205,7 +205,7 @@ class StatusBar(QFrame):
             await system_ops.reboot()
         except Exception:
             log.exception("rotation post failed")
-            QMessageBox.warning(self, "pi-Mesh", "Failed to apply rotation.")
+            QMessageBox.warning(self, "pi-Mesh", "Impossibile applicare la rotazione.")
 
     def _take_screenshot(self) -> None:
         from datetime import datetime
@@ -242,7 +242,8 @@ class StatusBar(QFrame):
                 raise ValueError(f"unknown system action: {action}")
         except Exception:
             log.exception("system action %s failed", action)
-            QMessageBox.warning(self, "pi-Mesh", f"{action} failed.")
+            it = {"reboot": "Riavvio", "shutdown": "Spegnimento"}.get(action, action)
+            QMessageBox.warning(self, "pi-Mesh", f"{it} fallito.")
 
 
 # ---------------------------------------------------------------------------

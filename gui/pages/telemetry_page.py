@@ -54,7 +54,7 @@ class Page(QWidget):
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.addWidget(QLabel("Nodes"))
+        left_layout.addWidget(QLabel("Nodi"))
         self._nodes = QListWidget(left)
         self._nodes.itemSelectionChanged.connect(self._on_node_selected)
         left_layout.addWidget(self._nodes, 1)
@@ -66,7 +66,7 @@ class Page(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         head = QHBoxLayout()
-        self._right_label = QLabel("Select a node")
+        self._right_label = QLabel("Seleziona un nodo")
         self._right_label.setProperty("role", "muted")
         head.addWidget(self._right_label, 1)
         csv_btn = QPushButton("CSV")
@@ -88,7 +88,7 @@ class Page(QWidget):
         right_layout.addWidget(self._rows, 1)
 
         spark_row = QHBoxLayout()
-        spark_lbl = QLabel("Battery")
+        spark_lbl = QLabel("Batteria")
         spark_lbl.setProperty("role", "muted")
         spark_row.addWidget(spark_lbl)
         self._spark = Sparkline(capacity=120, color="#4caf50", parent=right)
@@ -203,7 +203,7 @@ class Page(QWidget):
             rows = await database.get_telemetry(cfg.DB_PATH, node_id=node_id, limit=2000)
             out_path.write_text(serialize_telemetry_rows(rows, fmt), encoding="utf-8")
         except Exception as exc:
-            QMessageBox.warning(self, "Export", f"Export error: {exc}")
+            QMessageBox.warning(self, "Esporta", f"Errore esportazione: {exc}")
             return
         from gui.widgets.toast import show_toast
         show_toast(self, f"Saved {out_path.name}", role="ok")

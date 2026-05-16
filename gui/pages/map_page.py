@@ -423,8 +423,9 @@ class Page(QWidget):
         self._zoom_out = QPushButton(self)
         self._zoom_out.setIcon(QIcon(icon_pixmap(MinusIcon, 18, "#cdd")))
         self._zoom_out.setIconSize(QSize(18, 18))
-        self._zoom_in.setFixedWidth(34)
-        self._zoom_out.setFixedWidth(34)
+        # Bumped 34→40 for finger touch on the 3.5" kiosk display.
+        self._zoom_in.setFixedWidth(40)
+        self._zoom_out.setFixedWidth(40)
         self._zoom_label = QLabel("z5")
         self._zoom_label.setProperty("role", "muted")
         self._zoom_label.setFixedWidth(20)
@@ -440,7 +441,7 @@ class Page(QWidget):
         self._neighbor_toggle = QToolButton(self)
         self._neighbor_toggle.setIcon(QIcon(icon_pixmap(HexIcon, 18, "#cdd")))
         self._neighbor_toggle.setIconSize(QSize(18, 18))
-        self._neighbor_toggle.setToolTip("Show neighbor links")
+        self._neighbor_toggle.setToolTip("Mostra link tra vicini")
         self._neighbor_toggle.setCheckable(True)
         self._neighbor_toggle.toggled.connect(self._on_toggle_neighbors)
 
@@ -448,14 +449,14 @@ class Page(QWidget):
         recenter = QPushButton(self)
         recenter.setIcon(QIcon(icon_pixmap(TargetIcon, 18, "#cdd")))
         recenter.setIconSize(QSize(18, 18))
-        recenter.setToolTip("Center on local node")
-        recenter.setFixedWidth(34)
+        recenter.setToolTip("Centra sul nodo locale")
+        recenter.setFixedWidth(40)
 
         # Markers / waypoints list
         markers_btn = QToolButton(self)
         markers_btn.setIcon(QIcon(icon_pixmap(FlagIcon, 18, "#cdd")))
         markers_btn.setIconSize(QSize(18, 18))
-        markers_btn.setToolTip("Custom markers / waypoints")
+        markers_btn.setToolTip("Marker / waypoint personalizzati")
         markers_btn.clicked.connect(self._show_markers_dialog)
 
         bar.addWidget(self._zoom_in)
@@ -655,29 +656,29 @@ class Page(QWidget):
             QSpinBox,
         )
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"Location  {lat:.5f}, {lon:.5f}")
+        dlg.setWindowTitle(f"Posizione  {lat:.5f}, {lon:.5f}")
         dlg.setModal(True)
 
         form = QFormLayout(dlg)
-        form.addRow(QLabel("Add a custom marker (local) or send a waypoint to the mesh."))
+        form.addRow(QLabel("Aggiungi un marker locale o invia un waypoint alla mesh."))
 
         label_edit = QLineEdit()
-        label_edit.setPlaceholderText("Label / name")
+        label_edit.setPlaceholderText("Etichetta / nome")
         wp_desc = QLineEdit()
-        wp_desc.setPlaceholderText("Waypoint description (optional)")
+        wp_desc.setPlaceholderText("Descrizione waypoint (opzionale)")
         wp_expire = QSpinBox()
         wp_expire.setRange(1, 720)
         wp_expire.setSuffix(" h")
         wp_expire.setValue(24)
 
-        form.addRow("Name", label_edit)
-        form.addRow("Description", wp_desc)
-        form.addRow("Waypoint TTL", wp_expire)
+        form.addRow("Nome", label_edit)
+        form.addRow("Descrizione", wp_desc)
+        form.addRow("Durata waypoint", wp_expire)
 
         row = QHBoxLayout()
-        add_marker_btn = QPushButton("Add marker")
-        send_wp_btn = QPushButton("Send waypoint")
-        cancel_btn = QPushButton("Cancel")
+        add_marker_btn = QPushButton("Aggiungi marker")
+        send_wp_btn = QPushButton("Invia waypoint")
+        cancel_btn = QPushButton("Annulla")
         row.addWidget(add_marker_btn)
         row.addWidget(send_wp_btn)
         row.addStretch(1)
@@ -723,7 +724,7 @@ class Page(QWidget):
         except Exception:
             log.exception("add marker failed")
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Map", "Failed to add marker.")
+            QMessageBox.warning(self, "Mappa", "Impossibile aggiungere il marker.")
         self._refresh_custom_markers()
 
     async def _send_waypoint_async(self, name: str, lat: float, lon: float,
@@ -738,7 +739,7 @@ class Page(QWidget):
         except Exception:
             log.exception("send waypoint failed")
             from PySide6.QtWidgets import QMessageBox
-            QMessageBox.warning(self, "Map", "Failed to send waypoint.")
+            QMessageBox.warning(self, "Mappa", "Impossibile inviare il waypoint.")
         self._refresh_waypoints()
 
     def _show_markers_dialog(self) -> None:
@@ -752,13 +753,13 @@ class Page(QWidget):
         )
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Markers and waypoints")
+        dlg.setWindowTitle("Marker e waypoint")
         dlg.setModal(True)
         v = QVBoxLayout(dlg)
-        v.addWidget(QLabel("Custom markers (purple) — double-tap removes."))
+        v.addWidget(QLabel("Marker personali (viola) — doppio tap per rimuovere."))
         marker_list = QListWidget()
         v.addWidget(marker_list, 1)
-        v.addWidget(QLabel("Waypoints (yellow) — sent to the mesh, double-tap removes."))
+        v.addWidget(QLabel("Waypoint (giallo) — inviati alla mesh, doppio tap per rimuovere."))
         wp_list = QListWidget()
         v.addWidget(wp_list, 1)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
