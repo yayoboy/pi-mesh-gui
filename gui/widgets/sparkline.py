@@ -6,7 +6,7 @@ The math (sample buffer, gap handling, autoscale, x/y mapping) lives in
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -48,12 +48,15 @@ class Sparkline(QWidget):
             pen.setWidthF(1.5)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             p.setPen(pen)
+            # PySide6's drawLine has int overloads and QPointF overloads.
+            # Polyline points are floats, so wrap explicitly in QPointF to
+            # avoid "argument 1 has unexpected type 'float'" SIGABRT.
             for run in runs:
                 if len(run) < 2:
                     continue
                 for i in range(len(run) - 1):
                     x1, y1 = run[i]
                     x2, y2 = run[i + 1]
-                    p.drawLine(x1, y1, x2, y2)
+                    p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
         finally:
             p.end()
