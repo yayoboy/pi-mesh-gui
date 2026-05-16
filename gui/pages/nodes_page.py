@@ -46,7 +46,8 @@ def _row_html(node: dict, *, now: int | None = None) -> str:
         parts.append(f"SNR {snr:+.1f}")
     batt = node.get("battery_level")
     if batt is not None:
-        parts.append(f"bat {batt}%")
+        # Meshtastic reports >100 to mean "plugged in / external power".
+        parts.append("bat ext" if batt > 100 else f"bat {batt}%")
     hops = node.get("hop_count")
     if hops is not None:
         parts.append(f"hop {hops}")

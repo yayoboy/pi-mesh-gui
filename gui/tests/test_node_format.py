@@ -55,6 +55,9 @@ def test_fmt_node_snr_one_decimal():
 def test_fmt_node_battery_percent():
     assert fmt_node({"battery_level": 75}, "batt") == "75%"
     assert fmt_node({}, "batt") == "—"
+    # Meshtastic uses >100 to mean external power.
+    assert fmt_node({"battery_level": 101}, "batt") == "ext"
+    assert fmt_node({"battery_level": 200}, "batt") == "ext"
 
 
 def test_fmt_node_hops_integer():

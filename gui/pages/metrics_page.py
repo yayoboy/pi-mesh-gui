@@ -161,7 +161,8 @@ class _NodeTelemetryCard(QFrame):
 
         cells: list[str] = []
         if device.get("battery_level") is not None:
-            cells.append(f"🔋 {device['battery_level']}%")
+            bl = device["battery_level"]
+            cells.append("🔋 ext" if bl > 100 else f"🔋 {bl}%")
         if device.get("voltage") is not None:
             cells.append(f"⚡ {device['voltage']:.2f}V")
         if env.get("temperature") is not None:
