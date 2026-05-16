@@ -43,9 +43,11 @@ from gui.pages.map_math import (
 log = logging.getLogger(__name__)
 
 
-# Where offline tiles live. Each layer is a sub-directory keyed by
-# the layer name (matches the web UI: data/tiles/{layer}/{z}/{x}/{y}.png).
-TILES_BASE = Path("data/tiles")
+# Where offline tiles live. scripts/download_tiles.py writes to
+# static/tiles/{layer}/{z}/{x}/{y}.png — match that path so the map
+# actually finds them. USB-mounted tile sets are spliced in at runtime
+# by usb_storage.{mount,sync} so they end up under the same root.
+TILES_BASE = Path("static/tiles")
 LAYER_NAMES = ("osm", "topo", "satellite")
 
 
@@ -72,7 +74,10 @@ class MapView(QGraphicsView):
 
     DEFAULT_LAT = 41.9
     DEFAULT_LON = 12.5
-    DEFAULT_ZOOM = 5
+    # Default zoom picked to land inside the range scripts/download_tiles.py
+    # actually caches (7-12 for Italy). z=5 showed an empty map for new users
+    # because no offline tile is generated for continent-scale zoom levels.
+    DEFAULT_ZOOM = 9
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -426,7 +431,7 @@ class Page(QWidget):
         # Bumped 34→40 for finger touch on the 3.5" kiosk display.
         self._zoom_in.setFixedWidth(40)
         self._zoom_out.setFixedWidth(40)
-        self._zoom_label = QLabel("z5")
+        self._zoom_label = QLabel(f"z{MapView.DEFAULT_ZOOM}")
         self._zoom_label.setProperty("role", "muted")
         self._zoom_label.setFixedWidth(20)
 
