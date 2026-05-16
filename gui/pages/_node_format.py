@@ -35,7 +35,10 @@ def fmt_node(node: dict, key: str, *, now: int | None = None) -> str:
         return f"{v:.1f}" if v is not None else "—"
     if key == "batt":
         v = node.get("battery_level")
-        return f"{v}%" if v is not None else "—"
+        if v is None:
+            return "—"
+        # Meshtastic reports >100 to mean "plugged in / external power".
+        return "ext" if v > 100 else f"{v}%"
     if key == "hops":
         v = node.get("hop_count")
         return str(v) if v is not None else "—"

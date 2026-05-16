@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -74,18 +76,50 @@ class NodeDetailDialog(QDialog):
         self.setModal(True)
         self._fade_anim = None  # held to keep alive through the animation
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        # Cap the dialog to the kiosk screen so its trailing buttons never
+        # fall off the bottom of the 320x480 panel.
+        if parent is not None:
+            pw, ph = parent.window().width(), parent.window().height()
+        else:
+            pw, ph = 320, 480
+        self.setFixedSize(pw, ph)
 
-        # Title row
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(8, 6, 8, 6)
+        outer.setSpacing(4)
+
+        # Header row: title on the left, big ✕ on the right.
+        # A standalone "Close" button at the very bottom of the dialog is
+        # too easy to miss when the content scrolls; this one is always
+        # visible and a 44x44 finger target.
+        header = QHBoxLayout()
         title = QLabel(node.get("long_name") or node.get("short_name") or "Node")
         f = title.font()
         f.setPointSize(13)
         f.setBold(True)
         title.setFont(f)
         title.setWordWrap(True)
-        layout.addWidget(title)
+        header.addWidget(title, 1)
+
+        close_top = QToolButton(self)
+        close_top.setText("✕")
+        close_top.setToolTip("Chiudi")
+        close_top.setFixedSize(44, 44)
+        close_top.clicked.connect(self.reject)
+        header.addWidget(close_top, 0, Qt.AlignmentFlag.AlignTop)
+        outer.addLayout(header)
+
+        # Body — everything below the header scrolls so taller content
+        # (Pubkey wrap, status banner, admin row) is always reachable.
+        body = QWidget(self)
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+        scroll = QScrollArea(self)
+        scroll.setWidget(body)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        outer.addWidget(scroll, 1)
 
         # Form rows
         form = QFormLayout()
