@@ -182,6 +182,11 @@ async def init(db_path: str) -> None:
     import os
     os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else '.', exist_ok=True)
     async with _get_db() as db:
+        # Restrict permissions: DB stores PSK channel keys and message content.
+        try:
+            os.chmod(db_path, 0o600)
+        except OSError as e:
+            logger.warning('Could not chmod 0600 on %s: %s', db_path, e)
         await db.execute('PRAGMA journal_mode=WAL')
         # Migrate messages table if schema predates M3 (node_id column missing)
         cursor = await db.execute("PRAGMA table_info(messages)")

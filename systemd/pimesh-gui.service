@@ -1,18 +1,26 @@
 [Unit]
-Description=pi-Mesh native Qt GUI (kiosk)
+Description=pi-Mesh native Qt GUI (framebuffer kiosk)
 After=network.target meshtasticd.service
-Requires=meshtasticd.service
+Wants=meshtasticd.service
+Conflicts=kiosk.service
 
 [Service]
-User=pimesh
-PAMName=login
-Environment=DISPLAY=:0
+User=root
+WorkingDirectory=/home/pimesh/pi-mesh-gui
+Environment=QT_QPA_PLATFORM=linuxfb:fb=/dev/fb1
+Environment=QT_QPA_GENERIC_PLUGINS=evdevmouse,evdevkeyboard
 Environment=HOME=/home/pimesh
-WorkingDirectory=/home/pimesh/pi-Mesh
+Environment=PIMESH_GUI_EMBEDDED_UVICORN=0
 ExecStartPre=/bin/sleep 3
-ExecStart=/usr/bin/xinit /home/pimesh/pi-Mesh/scripts/start-gui.sh -- :0 vt1 -nolisten tcp
-Restart=on-failure
+ExecStart=/usr/bin/python3 -m gui
+Restart=always
 RestartSec=5
+# Cap memory: Pi has 1-4GB, 256M is generous for a Qt kiosk; catches leaks early.
+MemoryMax=256M
+OOMPolicy=kill
+# Limit restart storms: max 5 restarts in 60s, then enter failed state.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 StandardOutput=journal
 StandardError=journal
 

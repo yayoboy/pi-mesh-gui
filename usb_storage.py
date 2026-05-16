@@ -2,6 +2,7 @@
 """USB storage detection, auto-mount, and tile management."""
 import logging
 import os
+import re
 import shutil
 import subprocess
 
@@ -9,6 +10,18 @@ logger = logging.getLogger(__name__)
 
 USB_MOUNT_BASE = '/media'
 TILES_SUBDIR = 'pi-mesh/tiles'
+
+# Allow only safe chars in device names and labels. lsblk values are
+# attacker-controllable via crafted USB filesystem labels.
+_SAFE_DEV_NAME = re.compile(r'^[a-zA-Z0-9_-]{1,32}$')
+_SAFE_LABEL = re.compile(r'^[a-zA-Z0-9_.-]{1,32}$')
+
+
+def _safe_label(raw: str, fallback: str) -> str:
+    """Return raw if it matches the label whitelist, else fallback's basename."""
+    if raw and _SAFE_LABEL.match(raw):
+        return raw
+    return os.path.basename(fallback) or 'usb'
 
 
 def _find_usb_block_devices() -> list[dict]:
@@ -52,8 +65,14 @@ def _find_usb_block_devices() -> list[dict]:
 
 def _auto_mount(device: dict) -> str | None:
     """Auto-mount a USB device, return mount point or None."""
-    dev_path = f"/dev/{device['name']}"
-    mount_dir = os.path.join(USB_MOUNT_BASE, device['label'])
+    name = device.get('name', '')
+    if not _SAFE_DEV_NAME.match(name):
+        logger.warning('Refusing to mount device with unsafe name: %r', name)
+        return None
+    dev_path = f"/dev/{name}"
+    safe_label = _safe_label(device.get('label', ''), name)
+    # Defense-in-depth: basename() prevents path traversal even if regex fails.
+    mount_dir = os.path.join(USB_MOUNT_BASE, os.path.basename(safe_label))
     try:
         os.makedirs(mount_dir, exist_ok=True)
         result = subprocess.run(

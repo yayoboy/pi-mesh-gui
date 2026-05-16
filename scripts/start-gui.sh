@@ -11,6 +11,11 @@ xset -dpms
 xset s off
 xset s noblank
 
+# Hide mouse cursor on the touchscreen kiosk. unclutter is optional.
+if command -v unclutter >/dev/null 2>&1; then
+    unclutter -idle 0.1 -root &
+fi
+
 # Borderless WM.
 matchbox-window-manager -use_titlebar no &
 
