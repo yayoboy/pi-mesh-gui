@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import (
     QComboBox,
@@ -134,25 +134,44 @@ class MapView(QGraphicsView):
     def zoom(self) -> int:
         return self._zoom
 
-    def set_zoom(self, zoom: int, recenter: bool = False) -> None:
+    def set_zoom(self, zoom: int, recenter: bool = False,
+                 focal_viewport: QPoint | None = None) -> None:
+        """Change zoom level.
+
+        ``focal_viewport`` (when set) names a point in viewport coordinates
+        whose underlying ``(lon, lat)`` must stay anchored across the zoom
+        change — wheel-zoom passes the cursor here so the world stays glued
+        to where the user is pointing. When unset, the new view recenters
+        on the *current* viewport center (button-zoom behaviour).
+        """
         zoom = max(MIN_ZOOM, min(MAX_ZOOM, zoom))
         if zoom == self._zoom and not recenter:
             return
 
-        # Capture the current viewport center in lon/lat before changing
-        # zoom — otherwise zooming snaps the view back to _center_lon/lat
-        # (the configured default) and loses whatever the user had panned
-        # to. Skip the capture on the very first call when the viewport
-        # isn't sized yet.
         old_zoom = self._zoom
-        if self.viewport().width() > 0 and self.viewport().height() > 0:
-            sc = self.mapToScene(self.viewport().rect().center())
+        vp = self.viewport()
+        has_size = vp.width() > 0 and vp.height() > 0
+
+        # Determine the anchor point (in viewport coords) whose lon/lat we
+        # want to preserve, and the offset between that point and the
+        # viewport center.
+        focal_lon: float | None = None
+        focal_lat: float | None = None
+        focal_dx = focal_dy = 0.0
+        if has_size:
+            if focal_viewport is not None:
+                anchor = focal_viewport
+                focal_dx = vp.width() / 2.0 - anchor.x()
+                focal_dy = vp.height() / 2.0 - anchor.y()
+            else:
+                anchor = vp.rect().center()
+            sc = self.mapToScene(anchor)
             try:
                 lon, lat = pixel_to_lonlat(sc.x(), sc.y(), old_zoom)
-                # Only update if the projection landed somewhere sensible
+                # Only adopt the projection if it landed somewhere sensible
                 # (not the mercator world corner = uninitialised view).
                 if -180 < lon < 180 and -85 < lat < 85:
-                    self._center_lon, self._center_lat = lon, lat
+                    focal_lon, focal_lat = lon, lat
                     recenter = True
             except Exception:
                 pass
@@ -169,8 +188,25 @@ class MapView(QGraphicsView):
         self._scene.setSceneRect(0, 0, side, side)
 
         if recenter:
-            cx, cy = lonlat_to_pixel(self._center_lon, self._center_lat, zoom)
-            self.centerOn(cx, cy)
+            if focal_lon is not None and focal_lat is not None:
+                nx, ny = lonlat_to_pixel(focal_lon, focal_lat, zoom)
+                # Shift the centerOn target so the focal pixel ends up under
+                # the same viewport coordinate as before.
+                self.centerOn(nx + focal_dx, ny + focal_dy)
+            else:
+                cx, cy = lonlat_to_pixel(self._center_lon, self._center_lat, zoom)
+                self.centerOn(cx, cy)
+            # Refresh cached center from the actual viewport center after
+            # centerOn so subsequent button-zoom calls anchor on what the
+            # user is currently looking at, not on the wheel focal point.
+            if has_size:
+                sc_center = self.mapToScene(vp.rect().center())
+                try:
+                    clon, clat = pixel_to_lonlat(sc_center.x(), sc_center.y(), zoom)
+                    if -180 < clon < 180 and -85 < clat < 85:
+                        self._center_lon, self._center_lat = clon, clat
+                except Exception:
+                    pass
 
         self._refresh_tiles()
         self._reposition_markers()
@@ -482,7 +518,13 @@ class MapView(QGraphicsView):
         if delta == 0:
             return
         new_zoom = self._zoom + (1 if delta > 0 else -1)
-        self.set_zoom(new_zoom, recenter=True)
+        # Anchor the zoom on the cursor so the world stays under the
+        # pointer instead of snapping back to the viewport center.
+        # globalPosition→viewport is the portable way: QGraphicsView's
+        # ev.position() is documented as widget-local in Qt 6 but the
+        # implicit viewport routing has had edge cases historically.
+        focal = self.viewport().mapFromGlobal(ev.globalPosition().toPoint())
+        self.set_zoom(new_zoom, recenter=True, focal_viewport=focal)
         ev.accept()
 
     # Long-press → emit a (lon, lat) signal for the page to handle.
