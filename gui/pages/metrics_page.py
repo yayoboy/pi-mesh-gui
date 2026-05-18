@@ -212,48 +212,74 @@ class _LocalBoardChart(QFrame):
 
 
 class _MetricCell(QWidget):
-    """Compact icon + label pair, used as a single cell in the metrics row.
+    """Single metric tile: ``[icon] label`` on top, big value below.
 
     Vector icon (QPainter) avoids the .notdef tofu we used to get on the
-    SPI kiosk for emoji glyphs the fontconfig stack couldn't find.
+    SPI kiosk for emoji glyphs the fontconfig stack couldn't find. The
+    descriptive label means a glance is enough to know which sensor each
+    cell belongs to without learning the icon set first.
     """
 
     _ICON_PX = 12
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(3)
+        box = QVBoxLayout(self)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(0)
+
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.setSpacing(3)
         self._icon = QLabel(self)
         self._icon.setFixedSize(self._ICON_PX, self._ICON_PX)
-        self._text = QLabel("", self)
-        self._text.setProperty("role", "muted")
-        f = self._text.font()
-        f.setPointSize(8)
-        self._text.setFont(f)
-        row.addWidget(self._icon)
-        row.addWidget(self._text)
+        self._label = QLabel("", self)
+        self._label.setProperty("role", "muted")
+        lf = self._label.font()
+        lf.setPointSize(8)
+        self._label.setFont(lf)
+        head.addWidget(self._icon)
+        head.addWidget(self._label, 1)
+        box.addLayout(head)
+
+        self._value = QLabel("—", self)
+        vf = self._value.font()
+        vf.setPointSize(10)
+        vf.setBold(True)
+        self._value.setFont(vf)
+        box.addWidget(self._value)
+
         self._icon_cls: type | None = None
         self._icon_color = "#9aa"
 
-    def set_cell(self, icon_cls: type, text: str, color: str = "#9aa") -> None:
+    def set_cell(self, icon_cls: type, label: str, value: str,
+                 color: str = "#9aa") -> None:
         if icon_cls is not self._icon_cls or color != self._icon_color:
-            self._icon.setPixmap(_status_icons.icon_pixmap(icon_cls, self._ICON_PX, color))
+            self._icon.setPixmap(
+                _status_icons.icon_pixmap(icon_cls, self._ICON_PX, color)
+            )
             self._icon_cls = icon_cls
             self._icon_color = color
-        self._text.setText(text)
+        self._label.setText(label)
+        self._value.setText(value)
 
 
 class _NodeTelemetryCard(QFrame):
-    """One row per node: short name + battery / voltage / env metrics."""
+    """One card per node: short name + grid of metric tiles.
+
+    The tiles wrap on a fixed-column grid instead of a single row, so the
+    card grows vertically as sensors come in rather than forcing a
+    horizontal scroll on the kiosk's narrow display.
+    """
+
+    _GRID_COLUMNS = 3
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(6, 4, 6, 4)
-        self._layout.setSpacing(2)
+        self._layout.setSpacing(3)
 
         self._title = QLabel("?")
         f = self._title.font()
@@ -261,18 +287,20 @@ class _NodeTelemetryCard(QFrame):
         self._title.setFont(f)
         self._layout.addWidget(self._title)
 
-        self._metrics_row = QHBoxLayout()
-        self._metrics_row.setSpacing(10)
-        self._layout.addLayout(self._metrics_row)
+        self._metrics_grid = QGridLayout()
+        self._metrics_grid.setContentsMargins(0, 0, 0, 0)
+        self._metrics_grid.setHorizontalSpacing(10)
+        self._metrics_grid.setVerticalSpacing(4)
+        self._layout.addLayout(self._metrics_grid)
         self._cells: list[_MetricCell] = []
 
     def _ensure_cells(self, count: int) -> None:
+        cols = self._GRID_COLUMNS
         while len(self._cells) < count:
+            idx = len(self._cells)
             cell = _MetricCell(self)
+            self._metrics_grid.addWidget(cell, idx // cols, idx % cols)
             self._cells.append(cell)
-            # Insert before the trailing stretch (if any). The row was set up
-            # without one in __init__, so just append.
-            self._metrics_row.addWidget(cell)
         for extra in self._cells[count:]:
             extra.hide()
         for visible in self._cells[:count]:
@@ -286,63 +314,73 @@ class _NodeTelemetryCard(QFrame):
         air = (info.get("air_quality") or {}).get("data") or {}
 
         si = _status_icons
-        specs: list[tuple[type, str]] = []
+        # Each spec is (icon_cls, label_it, value_str). The label says
+        # *what* the value represents so the row reads at a glance even
+        # for unfamiliar sensors.
+        specs: list[tuple[type, str, str]] = []
 
         # --- Device metrics ---
         if device.get("battery_level") is not None:
             bl = device["battery_level"]
-            specs.append((si.BatteryIcon, "ext" if bl > 100 else f"{bl}%"))
+            specs.append((si.BatteryIcon, "Batteria",
+                          "ext" if bl > 100 else f"{bl}%"))
         if device.get("voltage") is not None:
-            specs.append((si.BoltIcon, f"{device['voltage']:.2f}V"))
+            specs.append((si.BoltIcon, "Tensione", f"{device['voltage']:.2f} V"))
         if device.get("channel_utilization") is not None:
-            specs.append((si.ChannelIcon, f"{device['channel_utilization']:.0f}%"))
+            specs.append((si.ChannelIcon, "Canale",
+                          f"{device['channel_utilization']:.0f}%"))
         if device.get("air_util_tx") is not None:
-            specs.append((si.ChannelIcon, f"tx {device['air_util_tx']:.0f}%"))
+            specs.append((si.ChannelIcon, "Airtime TX",
+                          f"{device['air_util_tx']:.0f}%"))
         if device.get("uptime_seconds") is not None:
-            specs.append((si.ClockIcon, _fmt_uptime(device["uptime_seconds"])))
+            specs.append((si.ClockIcon, "Uptime",
+                          _fmt_uptime(device["uptime_seconds"])))
 
         # --- Environment metrics ---
         if env.get("temperature") is not None:
-            specs.append((si.ThermoIcon, f"{env['temperature']:.1f}°C"))
+            specs.append((si.ThermoIcon, "Temp", f"{env['temperature']:.1f} °C"))
         if env.get("relative_humidity") is not None:
-            specs.append((si.DropIcon, f"{env['relative_humidity']:.0f}%"))
+            specs.append((si.DropIcon, "Umidità", f"{env['relative_humidity']:.0f}%"))
         if env.get("barometric_pressure") is not None:
-            specs.append((si.GaugeIcon, f"{env['barometric_pressure']:.0f}hPa"))
+            specs.append((si.GaugeIcon, "Pressione",
+                          f"{env['barometric_pressure']:.0f} hPa"))
         if env.get("gas_resistance") is not None:
             # gas_resistance can land in kΩ or Ω depending on the firmware;
             # show a single significant figure to fit the cell width.
             gr = env["gas_resistance"]
-            specs.append((si.GasIcon,
-                          f"{gr / 1000:.1f}kΩ" if gr >= 1000 else f"{gr:.0f}Ω"))
+            specs.append((si.GasIcon, "Gas",
+                          f"{gr / 1000:.1f} kΩ" if gr >= 1000 else f"{gr:.0f} Ω"))
         if env.get("iaq") is not None:
-            specs.append((si.IaqIcon, f"IAQ {env['iaq']:.0f}"))
+            specs.append((si.IaqIcon, "IAQ", f"{env['iaq']:.0f}"))
         # Future-proof: extra environment fields some firmwares may emit.
         if env.get("lux") is not None:
-            specs.append((si.SunIcon, f"{env['lux']:.0f}lx"))
+            specs.append((si.SunIcon, "Luce", f"{env['lux']:.0f} lx"))
         if env.get("uv_lux") is not None or env.get("uv_index") is not None:
             v = env.get("uv_index") if env.get("uv_index") is not None else env.get("uv_lux")
-            specs.append((si.UvIcon, f"UV {v:.1f}"))
+            specs.append((si.UvIcon, "UV", f"{v:.1f}"))
         if env.get("wind_speed") is not None:
-            specs.append((si.WindIcon, f"{env['wind_speed']:.1f}m/s"))
+            specs.append((si.WindIcon, "Vento", f"{env['wind_speed']:.1f} m/s"))
         if env.get("wind_direction") is not None:
-            specs.append((si.CompassIcon, f"{env['wind_direction']:.0f}°"))
+            specs.append((si.CompassIcon, "Direzione",
+                          f"{env['wind_direction']:.0f}°"))
         if env.get("rainfall_1h") is not None or env.get("rainfall_24h") is not None:
             v = (env.get("rainfall_1h") if env.get("rainfall_1h") is not None
                  else env.get("rainfall_24h"))
-            specs.append((si.RainIcon, f"{v:.1f}mm"))
+            label = "Pioggia 1h" if env.get("rainfall_1h") is not None else "Pioggia 24h"
+            specs.append((si.RainIcon, label, f"{v:.1f} mm"))
         if env.get("weight") is not None:
-            specs.append((si.WeightIcon, f"{env['weight']:.1f}kg"))
+            specs.append((si.WeightIcon, "Peso", f"{env['weight']:.1f} kg"))
         if env.get("distance") is not None:
-            specs.append((si.RulerIcon, f"{env['distance']:.0f}mm"))
+            specs.append((si.RulerIcon, "Distanza", f"{env['distance']:.0f} mm"))
 
         # --- Power metrics (3 channels) ---
         for ch in (1, 2, 3):
             v = power.get(f"ch{ch}_voltage")
             i = power.get(f"ch{ch}_current")
             if v is not None:
-                specs.append((si.BoltIcon, f"ch{ch} {v:.2f}V"))
+                specs.append((si.BoltIcon, f"Canale {ch} V", f"{v:.2f} V"))
             if i is not None:
-                specs.append((si.CurrentIcon, f"ch{ch} {i:.0f}mA"))
+                specs.append((si.CurrentIcon, f"Canale {ch} I", f"{i:.0f} mA"))
 
         # --- Air quality (PMSA0031) ---
         # Prefer the "environmental" particulate readings if present, fall
@@ -352,11 +390,11 @@ class _NodeTelemetryCard(QFrame):
             v = (air.get(f"{size_key}_environmental")
                  or air.get(f"{size_key}_standard"))
             if v is not None:
-                specs.append((si.DustIcon, f"{label} {v:.0f}"))
+                specs.append((si.DustIcon, label, f"{v:.0f} µg/m³"))
 
         self._ensure_cells(len(specs))
-        for cell, (icon_cls, text) in zip(self._cells, specs):
-            cell.set_cell(icon_cls, text)
+        for cell, (icon_cls, label, value) in zip(self._cells, specs):
+            cell.set_cell(icon_cls, label, value)
 
 
 class Page(QWidget):
