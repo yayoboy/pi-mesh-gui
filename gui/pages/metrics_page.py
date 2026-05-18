@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 from gui.core.tasks import schedule as _schedule
 from gui.pages._telemetry_format import serialize_telemetry_rows as _serialize_telemetry_rows
 from gui.theme.colors import get_widget_colors
+from gui.widgets.multi_sparkline import MultiSparkline
 from gui.widgets.sparkline import Sparkline
 
 log = logging.getLogger(__name__)
@@ -122,6 +123,91 @@ class MetricCard(QFrame):
             self._spark.push(float(value))
         except (TypeError, ValueError):
             self._spark.push(None)
+
+
+class _LocalBoardChart(QFrame):
+    """Aggregate chart for the local Meshtastic board.
+
+    Three percentage series share one canvas (battery level, airtime TX,
+    channel utilization). A compact line of chips above the chart prints
+    the two non-percentage metrics that can't share the y-axis: average
+    SNR of remote neighbors (dB) and last-seen RSSI (dBm).
+    """
+
+    def __init__(self, colors: dict, parent=None) -> None:
+        super().__init__(parent)
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(6, 4, 6, 4)
+        outer.setSpacing(2)
+
+        title = QLabel("Locale: batteria · airtime · canale")
+        f = title.font()
+        f.setPointSize(9)
+        title.setFont(f)
+        title.setProperty("role", "muted")
+        outer.addWidget(title)
+
+        # Chip row: SNR vicini · RSSI ultimo packet.
+        chips = QHBoxLayout()
+        chips.setSpacing(10)
+        self._snr_chip = QLabel("SNR vicini —")
+        self._rssi_chip = QLabel("RSSI ultimo —")
+        for chip in (self._snr_chip, self._rssi_chip):
+            chip.setProperty("role", "muted")
+            cf = chip.font()
+            cf.setPointSize(8)
+            chip.setFont(cf)
+            chips.addWidget(chip)
+        chips.addStretch(1)
+        outer.addLayout(chips)
+
+        self._chart = MultiSparkline(
+            series=[
+                ("battery",  "Bat",  colors["battery_full"]),
+                ("airtime",  "Air",  colors["series_ram"]),
+                ("channel",  "Ch",   colors["series_default"]),
+            ],
+            capacity=120,
+            y_range=(0.0, 100.0),
+        )
+        self._chart.setMinimumHeight(64)
+        outer.addWidget(self._chart, 1)
+
+    def apply_colors(self, colors: dict) -> None:
+        self._chart.set_series_color("battery", colors["battery_full"])
+        self._chart.set_series_color("airtime", colors["series_ram"])
+        self._chart.set_series_color("channel", colors["series_default"])
+
+    def update_history(self, samples: list[dict]) -> None:
+        """Replace the chart contents with the given chronological samples.
+
+        Each sample is the ``data`` dict from a ``telemetry`` row of
+        ``ttype='device'`` for the local node, oldest first.
+        """
+        self._chart.clear()
+        for s in samples:
+            bl = s.get("battery_level")
+            # >100 means "plugged in / external power": clamp to 100 for the
+            # chart so the line doesn't shoot above the y-axis.
+            if isinstance(bl, (int, float)) and bl > 100:
+                bl = 100
+            self._chart.push({
+                "battery": bl,
+                "airtime": s.get("air_util_tx"),
+                "channel": s.get("channel_utilization"),
+            })
+
+    def update_neighbor_chips(self, *, avg_snr: float | None,
+                              last_rssi: float | None) -> None:
+        self._snr_chip.setText(
+            f"SNR vicini {avg_snr:+.1f} dB" if avg_snr is not None
+            else "SNR vicini —"
+        )
+        self._rssi_chip.setText(
+            f"RSSI ultimo {last_rssi:.0f} dBm" if last_rssi is not None
+            else "RSSI ultimo —"
+        )
 
 
 class _NodeTelemetryCard(QFrame):
@@ -274,6 +360,12 @@ class Page(QWidget):
         board_head.addWidget(json_btn)
         layout.addLayout(board_head)
 
+        # Aggregate chart for the local board (battery / airtime / channel).
+        # Placed above the per-node cards so it's the first thing visible
+        # when scrolling into the Board section.
+        self._local_chart = _LocalBoardChart(_c, parent=body)
+        layout.addWidget(self._local_chart)
+
         self._node_cards_host = QWidget()
         self._node_cards_layout = QVBoxLayout(self._node_cards_host)
         self._node_cards_layout.setContentsMargins(0, 0, 0, 0)
@@ -377,8 +469,37 @@ class Page(QWidget):
             log.debug("board telemetry refresh failed", exc_info=True)
             return
 
-        nodes_by_id = {n.get("id"): n for n in meshtasticd_client.get_nodes()}
+        all_nodes = list(meshtasticd_client.get_nodes())
+        nodes_by_id = {n.get("id"): n for n in all_nodes}
         local_id = meshtasticd_client.get_local_id()
+
+        # ---- Local board chart: chronological history of device-ttype rows.
+        if local_id:
+            local_device_samples: list[dict] = [
+                (r.get("data") or {})
+                for r in reversed(rows)  # rows is ts DESC; we want oldest first
+                if r.get("node_id") == local_id and r.get("ttype") == "device"
+            ]
+            self._local_chart.update_history(local_device_samples[-120:])
+
+            # Aggregate neighbor metrics for the chip row.
+            remote_snrs = [
+                n["snr"] for n in all_nodes
+                if not n.get("is_local") and isinstance(n.get("snr"), (int, float))
+            ]
+            avg_snr = sum(remote_snrs) / len(remote_snrs) if remote_snrs else None
+            # Last-heard remote node's RSSI gives the most recent reception.
+            last_rssi: float | None = None
+            for n in sorted(all_nodes, key=lambda x: -(x.get("last_heard") or 0)):
+                if n.get("is_local"):
+                    continue
+                r = n.get("rssi")
+                if isinstance(r, (int, float)):
+                    last_rssi = float(r)
+                    break
+            self._local_chart.update_neighbor_chips(
+                avg_snr=avg_snr, last_rssi=last_rssi
+            )
 
         # Keep only the most recent row per (node_id, ttype). rows come
         # back ts DESC, so the first match wins.
@@ -459,3 +580,4 @@ class Page(QWidget):
         self._cpu.set_color(c["series_cpu"])
         self._ram.set_color(c["series_ram"])
         self._tmp.set_color(c["series_temp"])
+        self._local_chart.apply_colors(c)
