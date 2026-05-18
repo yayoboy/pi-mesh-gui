@@ -7,7 +7,6 @@ Top-level QTabBar splits the two flows:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 
@@ -31,16 +30,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.core.tasks import schedule as _schedule
 from gui.pages._message_format import format_message
 from gui.widgets.status_icons import MenuIcon, TrashIcon, icon_pixmap
 
 log = logging.getLogger(__name__)
-
-
-def _schedule(coro) -> None:
-    loop = asyncio.get_event_loop_policy().get_event_loop()
-    if loop.is_running():
-        loop.create_task(coro)
 
 
 class _BroadcastView(QWidget):
@@ -68,6 +62,7 @@ class _BroadcastView(QWidget):
         clear.setIcon(QIcon(icon_pixmap(TrashIcon, 18, "#cdd")))
         clear.setIconSize(QSize(18, 18))
         clear.setToolTip("Svuota cronologia")
+        clear.setAccessibleName("Svuota cronologia canale")
         clear.clicked.connect(self._on_clear)
         head.addWidget(clear)
         layout.addLayout(head)
@@ -102,6 +97,7 @@ class _BroadcastView(QWidget):
         canned.setIcon(QIcon(icon_pixmap(MenuIcon, 18, "#cdd")))
         canned.setIconSize(QSize(18, 18))
         canned.setToolTip("Messaggi preimpostati")
+        canned.setAccessibleName("Apri menu messaggi preimpostati")
         canned.clicked.connect(self._show_canned_menu)
         send = QPushButton("Invia")
         send.clicked.connect(self._on_send)

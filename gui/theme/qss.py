@@ -165,6 +165,13 @@ QLabel[role="danger"] {{
     color: {danger};
 }}
 
+QPushButton[role="warn"] {{
+    color: {warn};
+}}
+QPushButton[role="danger"] {{
+    color: {danger};
+}}
+
 QToolTip {{
     background: {panel};
     color: {text};

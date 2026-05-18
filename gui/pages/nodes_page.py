@@ -28,12 +28,38 @@ from PySide6.QtWidgets import (
 )
 
 from gui.pages._node_format import fmt_age, fmt_node
+from gui.theme.colors import get_widget_colors
+from gui.theme.palettes import get_palette
 from gui.widgets.status_icons import RotationIcon, icon_pixmap
 
 log = logging.getLogger(__name__)
 
 
-def _row_html(node: dict, *, now: int | None = None) -> str:
+# Keys consumed by the HTML formatter. Filled from the active palette by
+# ``_resolve_row_colors`` — Qt does not resolve CSS variables in QLabel rich
+# text, so the colors must be substituted at render time.
+_RowColors = dict[str, str]
+
+
+def _resolve_row_colors(theme: str) -> _RowColors:
+    try:
+        qss = get_palette(theme)
+    except (KeyError, ValueError):
+        qss = get_palette("dark")
+    widget = get_widget_colors(theme)
+    return {
+        "accent":   qss["accent"],
+        "text":     qss["text"],
+        "subtitle": widget["subtitle_text"],
+    }
+
+
+_DEFAULT_ROW_COLORS: _RowColors = _resolve_row_colors("dark")
+
+
+def _row_html(node: dict, *, now: int | None = None,
+              colors: _RowColors | None = None) -> str:
+    c = colors or _DEFAULT_ROW_COLORS
     short = node.get("short_name") or "?"
     long_name = node.get("long_name") or ""
     age = fmt_age(node.get("last_heard"), now=now)
@@ -58,13 +84,13 @@ def _row_html(node: dict, *, now: int | None = None) -> str:
     sub = " · ".join(parts)
 
     weight = "700" if node.get("is_local") else "500"
-    short_color = "var(--accent)" if node.get("is_local") else "var(--text)"
+    short_color = c["accent"] if node.get("is_local") else c["text"]
     return (
         f'<div style="font-weight:{weight}; color:{short_color};">'
         f'  <span style="font-size:14px;">{short}</span>'
-        f'  <span style="color:#9aa;font-weight:400;font-size:12px;"> {long_name}</span>'
+        f'  <span style="color:{c["subtitle"]};font-weight:400;font-size:12px;"> {long_name}</span>'
         f'</div>'
-        f'<div style="font-size:11px;color:#8a92a4;margin-top:1px;">{sub}</div>'
+        f'<div style="font-size:11px;color:{c["subtitle"]};margin-top:1px;">{sub}</div>'
     )
 
 
@@ -74,6 +100,9 @@ class Page(QWidget):
         self._eventbus = eventbus
         self._settings = settings
         self._filter = ""
+        self._row_colors: _RowColors = _resolve_row_colors(
+            settings.get("display.theme") or "dark"
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
@@ -96,6 +125,7 @@ class Page(QWidget):
         refresh.setIcon(QIcon(icon_pixmap(RotationIcon, 18, "#cdd")))
         refresh.setIconSize(QSize(18, 18))
         refresh.setToolTip("Aggiorna")
+        refresh.setAccessibleName("Aggiorna elenco nodi")
         refresh.setFixedWidth(44)
         refresh.clicked.connect(self._refresh)
         head.addWidget(refresh)
@@ -115,6 +145,12 @@ class Page(QWidget):
         if eventbus is not None:
             eventbus.node_updated.connect(self._on_node_event)
             eventbus.position_updated.connect(self._on_node_event)
+
+        settings.subscribe("display.theme", self._on_theme_changed)
+
+    def _on_theme_changed(self, theme: str | None) -> None:
+        self._row_colors = _resolve_row_colors(theme or "dark")
+        self._render()
 
     # ------------------------------------------------------------------
 
@@ -142,7 +178,7 @@ class Page(QWidget):
                 continue
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, n.get("id"))
-            label = QLabel(_row_html(n))
+            label = QLabel(_row_html(n, colors=self._row_colors))
             label.setTextFormat(Qt.TextFormat.RichText)
             label.setStyleSheet("padding:6px 8px;")
             label.setMinimumHeight(42)

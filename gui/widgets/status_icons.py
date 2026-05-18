@@ -11,6 +11,19 @@ from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QWidget
 
+from gui.theme.colors import get_widget_colors
+
+
+def _active_colors() -> dict:
+    """Resolve widget colors for the current palette. Falls back to ``dark``
+    until settings are initialised."""
+    try:
+        from gui.core.settings import get_settings
+        theme = get_settings().get("display.theme") or "dark"
+    except Exception:
+        theme = "dark"
+    return dict(get_widget_colors(theme))
+
 
 class _IconBase(QWidget):
     """Monochrome icon. Subclasses draw in a 14x14 coordinate space;
@@ -74,11 +87,12 @@ class BatteryIcon(_IconBase):
 
     def set_level(self, level: float | None) -> None:
         self._level = max(0.0, min(1.0, level)) if level is not None else 0.0
+        c = _active_colors()
         self._color = (
-            QColor("#9aa") if level is None
-            else QColor("#f44336") if level < 0.2
-            else QColor("#ff9800") if level < 0.5
-            else QColor("#4caf50")
+            QColor(c["subtitle_text"]) if level is None
+            else QColor(c["battery_critical"]) if level < 0.2
+            else QColor(c["battery_warn"]) if level < 0.5
+            else QColor(c["battery_full"])
         )
         self.update()
 
@@ -101,9 +115,10 @@ class SignalIcon(_IconBase):
         self._bars = 0  # 0..4
 
     def set_strength(self, snr: float | None) -> None:
+        c = _active_colors()
         if snr is None:
             self._bars = 0
-            self._color = QColor("#9aa")
+            self._color = QColor(c["subtitle_text"])
         else:
             self._bars = (
                 4 if snr > 5
@@ -113,10 +128,10 @@ class SignalIcon(_IconBase):
                 else 0
             )
             self._color = (
-                QColor("#4caf50") if self._bars >= 3
-                else QColor("#ff9800") if self._bars == 2
-                else QColor("#f44336") if self._bars == 1
-                else QColor("#9aa")
+                QColor(c["snr_good"]) if self._bars >= 3
+                else QColor(c["snr_mid"]) if self._bars == 2
+                else QColor(c["snr_bad"]) if self._bars == 1
+                else QColor(c["subtitle_text"])
             )
         self.update()
 

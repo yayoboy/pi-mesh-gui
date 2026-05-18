@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from PySide6.QtCore import Qt, Signal
@@ -22,6 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.core.tasks import schedule as _module_schedule
 from gui.pages._node_format import fmt_age, fmt_node
 
 log = logging.getLogger(__name__)
@@ -104,6 +104,7 @@ class NodeDetailDialog(QDialog):
         close_top = QToolButton(self)
         close_top.setText("✕")
         close_top.setToolTip("Chiudi")
+        close_top.setAccessibleName("Chiudi dettagli nodo")
         close_top.setFixedSize(44, 44)
         close_top.clicked.connect(self.reject)
         header.addWidget(close_top, 0, Qt.AlignmentFlag.AlignTop)
@@ -341,10 +342,4 @@ class NodeDetailDialog(QDialog):
 
     @staticmethod
     def _schedule(coro) -> None:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(coro)
-
-
-# Convert internal `self._schedule` references back to the staticmethod call.
-# (No-op marker — keeps the surrounding diff minimal.)
+        _module_schedule(coro)

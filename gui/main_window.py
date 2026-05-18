@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.core.tasks import schedule as _schedule
 from gui.widgets.status_icons import (
     BatteryIcon,
     ConfigIcon,
@@ -126,22 +127,28 @@ class StatusBar(QFrame):
         # glyph availability (Unicode emojis varied across distros).
         self._batt = BatteryIcon(self)
         self._batt.set_tooltip("Batteria")
+        self._batt.setAccessibleName("Livello batteria")
         self._lora = SignalIcon(self)
         self._lora.set_tooltip("Segnale LoRa")
+        self._lora.setAccessibleName("Qualità segnale LoRa")
         self._gps = GpsIcon(self)
         self._gps.set_tooltip("GPS")
+        self._gps.setAccessibleName("Stato fix GPS")
         self._conn = ConnIcon(self)
         self._conn.set_tooltip("Radio")
+        self._conn.setAccessibleName("Stato connessione radio")
         _ACTION_COLOR = "#cdd"
         self._rot = RotationIcon(self)
         self._rot.set_color(_ACTION_COLOR)
         self._rot.set_tooltip("Rotazione")
+        self._rot.setAccessibleName("Cambia rotazione schermo")
         self._rot.set_clickable(True)
         self._rot.clicked.connect(self._show_rotation_menu)
 
         self._shot = ScreenshotIcon(self)
         self._shot.set_color(_ACTION_COLOR)
         self._shot.set_tooltip("Screenshot")
+        self._shot.setAccessibleName("Scatta uno screenshot")
         self._shot.set_clickable(True)
         self._shot.clicked.connect(self._take_screenshot)
 
@@ -186,10 +193,7 @@ class StatusBar(QFrame):
             f"Ruotare a {deg}° e riavviare?",
         ) != QMessageBox.StandardButton.Yes:
             return
-        import asyncio
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._post_rotation(deg))
+        _schedule(self._post_rotation(deg))
 
     async def _post_rotation(self, deg: int) -> None:
         try:
@@ -244,6 +248,7 @@ class _TabButton(QToolButton):
         self._icon_active = QIcon(icon_pixmap(icon_cls, _TAB_ICON_PX, _TAB_ICON_COLOR_ACTIVE))
         self.setIcon(self._icon_normal)
         self.setIconSize(QSize(_TAB_ICON_PX, _TAB_ICON_PX))
+        self.setAccessibleName(f"Apri sezione {label}")
         self._update_text()
         self.setMinimumHeight(TABBAR_H)
         f = self.font()
@@ -355,10 +360,17 @@ class MainWindow(QMainWindow):
         # demand via show_telemetry().
         self._telemetry_page: QWidget | None = None
 
+        # Fallback only. The status icons are mainly driven by event-bus
+        # signals (see ``attach``); the timer just makes sure the bar
+        # eventually catches up if a backend event was missed.
         self._status_timer = QTimer(self)
-        self._status_timer.setInterval(1000)
+        self._status_timer.setInterval(5000)
         self._status_timer.timeout.connect(self._refresh_status)
         self._status_timer.start()
+
+        # Coalesce bursts (e.g. many node_updated at startup) into a single
+        # status refresh on the next event-loop tick.
+        self._status_refresh_pending = False
 
         # Slower poll for the unread-message badge on the Msg tab.
         self._badge_timer = QTimer(self)
@@ -382,6 +394,15 @@ class MainWindow(QMainWindow):
         # Toast host so any descendant can call show_toast(self, …).
         from gui.widgets.toast import ToastHost
         ToastHost.for_window(self)
+
+        # Push status updates off the event bus instead of polling at 1 Hz.
+        # Each signal nudges the same coalescing slot so a flurry of events
+        # only triggers one refresh per event-loop tick.
+        for sig_name in ("node_updated", "position_updated", "telemetry",
+                         "rpi_telemetry"):
+            sig = getattr(eventbus, sig_name, None)
+            if sig is not None:
+                sig.connect(self._on_status_event)
 
         self._select_tab(0)
 
@@ -411,10 +432,7 @@ class MainWindow(QMainWindow):
             return StubPage(label, error=str(exc))
 
     def _refresh_msg_badge(self) -> None:
-        import asyncio
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._fetch_unread_count())
+        _schedule(self._fetch_unread_count())
 
     async def _fetch_unread_count(self) -> None:
         try:
@@ -429,6 +447,7 @@ class MainWindow(QMainWindow):
         self._tabs.set_badge(2, count)
 
     def _refresh_status(self) -> None:
+        self._status_refresh_pending = False
         try:
             import meshtasticd_client
             local = meshtasticd_client.get_local_node() or {}
@@ -443,3 +462,10 @@ class MainWindow(QMainWindow):
             )
         except Exception:
             log.debug("status refresh failed", exc_info=True)
+
+    def _on_status_event(self, _event=None) -> None:
+        """Coalesce status updates: schedule one refresh per event-loop tick."""
+        if self._status_refresh_pending:
+            return
+        self._status_refresh_pending = True
+        QTimer.singleShot(0, self._refresh_status)

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.core.tasks import schedule as _schedule
 from gui.pages._config_sections import (
     _AdminSection,
     _ChannelsSection,
@@ -127,9 +128,7 @@ class Page(QWidget):
         self._reload()
 
     def _reload(self) -> None:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._reload_async())
+        _schedule(self._reload_async())
 
     async def _reload_async(self) -> None:
         import config as cfg
@@ -181,9 +180,7 @@ class Page(QWidget):
         if not long_name or not short_name:
             QMessageBox.warning(self, "Config", "Nome completo e breve sono obbligatori.")
             return
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._save_device_async(long_name, short_name, role))
+        _schedule(self._save_device_async(long_name, short_name, role))
 
     async def _save_device_async(self, long_name: str, short_name: str, role: str) -> None:
         try:
@@ -199,9 +196,7 @@ class Page(QWidget):
         self._status.style().polish(self._status)
 
     def _save_lora(self, *, region: str, preset: str) -> None:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._save_lora_async(region, preset))
+        _schedule(self._save_lora_async(region, preset))
 
     async def _save_lora_async(self, region: str, preset: str) -> None:
         try:
@@ -217,9 +212,7 @@ class Page(QWidget):
         self._status.style().polish(self._status)
 
     def _save_mqtt(self, params: dict) -> None:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._save_mqtt_async(params))
+        _schedule(self._save_mqtt_async(params))
 
     async def _save_mqtt_async(self, params: dict) -> None:
         # Persist locally, push to board's MQTT module config, restart bridge.
@@ -241,14 +234,10 @@ class Page(QWidget):
         self._status.style().polish(self._status)
 
     def _save_channel(self, *, index: int, name: str, psk_b64: str) -> None:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._save_channel_async(index, name, psk_b64))
+        _schedule(self._save_channel_async(index, name, psk_b64))
 
     def _do_reboot(self) -> None:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._reboot_pi())
+        _schedule(self._reboot_pi())
 
     async def _reboot_pi(self) -> None:
         try:
@@ -259,9 +248,7 @@ class Page(QWidget):
             QMessageBox.warning(self, "Amministrazione", "Impossibile riavviare.")
 
     def _do_shutdown(self) -> None:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._shutdown_pi())
+        _schedule(self._shutdown_pi())
 
     async def _shutdown_pi(self) -> None:
         # Give the user a visible "shutting down" status so they don't
@@ -284,14 +271,10 @@ class Page(QWidget):
             self._status.style().polish(self._status)
 
     def _do_factory_reset(self) -> None:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._factory_reset_async())
+        _schedule(self._factory_reset_async())
 
     def _do_pi_factory_reset(self) -> None:
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._pi_factory_reset_async())
+        _schedule(self._pi_factory_reset_async())
 
     async def _pi_factory_reset_async(self) -> None:
         try:

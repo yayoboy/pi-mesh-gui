@@ -26,7 +26,17 @@ def _setup_logging() -> None:
 
 
 def _build_qapplication():
+    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QApplication
+
+    # Must be set before any QApplication instance is created. Without this
+    # mixed-DPI setups (kiosk display + external HDMI) ship with the Qt 6
+    # default Round policy, which produces tearing / fractional layouts on
+    # non-integer scale factors.
+    if QApplication.instance() is None:
+        QApplication.setHighDpiScaleFactorRoundingPolicy(
+            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+        )
 
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("pi-Mesh")
@@ -114,7 +124,9 @@ async def _async_main(app, window) -> None:
         import rpi_telemetry
         while True:
             try:
-                data = rpi_telemetry.collect()
+                # collect() reads sysfs and calls shutil.disk_usage which can
+                # block briefly under heavy SD-card IO — offload to a thread.
+                data = await asyncio.to_thread(rpi_telemetry.collect)
                 _mc._enqueue_event({"type": "rpi_telemetry", **data})
             except Exception:
                 log.exception("rpi_telemetry feed iteration failed")

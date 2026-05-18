@@ -7,7 +7,6 @@ back via ``meshtasticd_client.<setter>(params)``.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from PySide6.QtWidgets import (
@@ -22,15 +21,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.core.tasks import schedule as _schedule
 from gui.pages._module_specs import Field, ModuleSpec
 
 log = logging.getLogger(__name__)
-
-
-def _schedule(coro) -> None:
-    loop = asyncio.get_event_loop_policy().get_event_loop()
-    if loop.is_running():
-        loop.create_task(coro)
 
 
 class ModuleSection(QGroupBox):

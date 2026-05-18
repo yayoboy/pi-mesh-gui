@@ -11,7 +11,6 @@ table to ``data/exports/`` directly — no HTTP API involved.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from pathlib import Path
 
@@ -30,7 +29,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.core.tasks import schedule as _schedule
 from gui.pages._telemetry_format import serialize_telemetry_rows as _serialize_telemetry_rows
+from gui.theme.colors import get_widget_colors
 from gui.widgets.sparkline import Sparkline
 
 log = logging.getLogger(__name__)
@@ -39,12 +40,6 @@ log = logging.getLogger(__name__)
 # pull. Telemetry packets typically arrive every few minutes per node, so a
 # 15 s timer is more than enough; live updates also flow in via the event bus.
 _REFRESH_MS = 15000
-
-
-def _schedule(coro) -> None:
-    loop = asyncio.get_event_loop_policy().get_event_loop()
-    if loop.is_running():
-        loop.create_task(coro)
 
 
 def _fmt_bytes_mb(mb: float | int | None) -> str:
@@ -84,7 +79,11 @@ def _fmt_uptime(seconds: float | None) -> str:
 class MetricCard(QFrame):
     """Single metric: label, big value, sparkline of recent samples."""
 
-    def __init__(self, title: str, *, suffix: str = "", color: str = "#4a9eff", parent=None):
+    def __init__(self, title: str, *, suffix: str = "", color: str | None = None, parent=None):
+        # ``color`` defaults to the active palette's series-default token so
+        # call sites that don't override it inherit the theme.
+        if color is None:
+            color = get_widget_colors(None)["series_default"]
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self._suffix = suffix
@@ -106,6 +105,10 @@ class MetricCard(QFrame):
 
         self._spark = Sparkline(capacity=60, color=color, parent=self)
         layout.addWidget(self._spark)
+
+    def set_color(self, color: str) -> None:
+        """Re-tint the embedded sparkline. Called on live theme change."""
+        self._spark.set_color(color)
 
     def update_value(self, value, *, formatter=None) -> None:
         if value is None:
@@ -215,15 +218,19 @@ class Page(QWidget):
 
         grid = QGridLayout()
         grid.setSpacing(6)
-        self._cpu = MetricCard("CPU",  suffix=" %", color="#4caf50")
-        self._ram = MetricCard("RAM",  suffix=" %", color="#ff9800")
-        self._tmp = MetricCard("Temp", suffix=" °C", color="#f44336")
+        _theme = settings.get("display.theme") or "dark"
+        _c = get_widget_colors(_theme)
+        self._cpu = MetricCard("CPU",  suffix=" %", color=_c["series_cpu"])
+        self._ram = MetricCard("RAM",  suffix=" %", color=_c["series_ram"])
+        self._tmp = MetricCard("Temp", suffix=" °C", color=_c["series_temp"])
         self._upt = MetricCard("Uptime")
         grid.addWidget(self._cpu, 0, 0)
         grid.addWidget(self._ram, 0, 1)
         grid.addWidget(self._tmp, 1, 0)
         grid.addWidget(self._upt, 1, 1)
         layout.addLayout(grid)
+
+        settings.subscribe("display.theme", self._on_theme_changed)
 
         # Disk bar
         disk_row = QFrame()
@@ -259,6 +266,8 @@ class Page(QWidget):
         json_btn = QPushButton("JSON")
         csv_btn.setFixedWidth(48)
         json_btn.setFixedWidth(48)
+        csv_btn.setAccessibleName("Esporta metriche board in CSV")
+        json_btn.setAccessibleName("Esporta metriche board in JSON")
         csv_btn.clicked.connect(lambda: self._export("csv"))
         json_btn.clicked.connect(lambda: self._export("json"))
         board_head.addWidget(csv_btn)
@@ -444,3 +453,9 @@ class Page(QWidget):
             return
         from gui.widgets.toast import show_toast
         show_toast(self, f"Saved {out_path.name}", role="ok")
+
+    def _on_theme_changed(self, theme: str | None) -> None:
+        c = get_widget_colors(theme or "dark")
+        self._cpu.set_color(c["series_cpu"])
+        self._ram.set_color(c["series_ram"])
+        self._tmp.set_color(c["series_temp"])

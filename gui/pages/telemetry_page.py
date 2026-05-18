@@ -7,7 +7,6 @@ Two-pane layout:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 
@@ -25,16 +24,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.core.tasks import schedule as _schedule
 from gui.pages._telemetry_format import format_telemetry_row
+from gui.theme.colors import get_widget_colors
 from gui.widgets.sparkline import Sparkline
 
 log = logging.getLogger(__name__)
-
-
-def _schedule(coro) -> None:
-    loop = asyncio.get_event_loop_policy().get_event_loop()
-    if loop.is_running():
-        loop.create_task(coro)
 
 
 class Page(QWidget):
@@ -73,6 +68,8 @@ class Page(QWidget):
         json_btn = QPushButton("JSON")
         csv_btn.setFixedWidth(46)
         json_btn.setFixedWidth(46)
+        csv_btn.setAccessibleName("Esporta telemetria in CSV")
+        json_btn.setAccessibleName("Esporta telemetria in JSON")
         csv_btn.clicked.connect(lambda: self._export("csv"))
         json_btn.clicked.connect(lambda: self._export("json"))
         head.addWidget(csv_btn)
@@ -91,7 +88,8 @@ class Page(QWidget):
         spark_lbl = QLabel("Batteria")
         spark_lbl.setProperty("role", "muted")
         spark_row.addWidget(spark_lbl)
-        self._spark = Sparkline(capacity=120, color="#4caf50", parent=right)
+        _battery_color = get_widget_colors(settings.get("display.theme") or "dark")["series_battery"]
+        self._spark = Sparkline(capacity=120, color=_battery_color, parent=right)
         self._spark.setMinimumHeight(28)
         spark_row.addWidget(self._spark, 1)
         right_layout.addLayout(spark_row)
@@ -105,6 +103,11 @@ class Page(QWidget):
         if eventbus is not None:
             eventbus.telemetry.connect(self._on_telemetry_event)
             eventbus.node_updated.connect(lambda _e: self._refresh_nodes())
+
+        settings.subscribe("display.theme", self._on_theme_changed)
+
+    def _on_theme_changed(self, theme: str | None) -> None:
+        self._spark.set_color(get_widget_colors(theme or "dark")["series_battery"])
 
     # ------------------------------------------------------------------
 
@@ -128,9 +131,7 @@ class Page(QWidget):
         node_id = items[0].data(Qt.ItemDataRole.UserRole)
         self._selected_node = node_id
         self._right_label.setText(node_id or "")
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        if loop.is_running():
-            loop.create_task(self._reload_history(node_id))
+        _schedule(self._reload_history(node_id))
 
     async def _reload_history(self, node_id: str) -> None:
         try:

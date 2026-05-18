@@ -33,6 +33,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.theme.colors import get_widget_colors
+
 log = logging.getLogger(__name__)
 
 
@@ -72,6 +74,7 @@ class Page(QWidget):
         self._filter = ""
         self._portnum_filters: set[str] = set()    # active filter set; empty = no filter
         self._known_portnums: set[str] = set()
+        self._pill_buttons: list[QToolButton] = []  # filter chips, retained for live restyle
         self._lines: list[dict] = []                # raw events kept for TSV export
 
         layout = QVBoxLayout(self)
@@ -89,6 +92,7 @@ class Page(QWidget):
         clear.clicked.connect(self._on_clear)
         export_btn = QPushButton("TSV")
         export_btn.setToolTip("Esporta righe filtrate come TSV")
+        export_btn.setAccessibleName("Esporta log filtrato in TSV")
         export_btn.clicked.connect(self._on_export)
         self._search = QLineEdit()
         self._search.setPlaceholderText("filtra log…")
@@ -134,6 +138,8 @@ class Page(QWidget):
             # both halves of the device (board + host) are visible together
             # in one place. Pi rows are tagged so they're easy to filter out.
             eventbus.rpi_telemetry.connect(self._on_rpi_event)
+
+        settings.subscribe("display.theme", self._on_theme_changed)
 
     # ------------------------------------------------------------------
 
@@ -181,23 +187,35 @@ class Page(QWidget):
         short = portnum.replace("_APP", "").replace("APP", "").lstrip("_")
         btn.setText(short or portnum[:6])
         btn.setToolTip(f"Filtra per {portnum}")
+        btn.setAccessibleName(f"Filtro pacchetti {portnum}")
         btn.setCheckable(True)
         btn.toggled.connect(lambda checked, p=portnum: self._on_pill(p, checked))
         f = btn.font()
         f.setPointSize(8)
         btn.setFont(f)
-        # Pill-shaped filter chip: outline when off, accent fill when on.
-        btn.setStyleSheet(
-            "QToolButton{"
-            "  border:1px solid #4a5; border-radius:9px;"
-            "  padding:1px 8px; color:#cdd; background:transparent;"
-            "}"
-            "QToolButton:checked{"
-            "  background:#ffcf3a; color:#1a1a1a; border-color:#ffcf3a;"
-            "}"
-        )
+        self._apply_pill_stylesheet(btn)
+        self._pill_buttons.append(btn)
         # Insert before the trailing stretch so pills cluster left.
         self._pills_row.insertWidget(self._pills_row.count() - 1, btn)
+
+    def _apply_pill_stylesheet(self, btn: QToolButton) -> None:
+        """Pill-shaped filter chip: outline when off, accent fill when on."""
+        c = get_widget_colors(self._settings.get("display.theme") or "dark")
+        btn.setStyleSheet(
+            "QToolButton{"
+            "  border:1px solid palette(mid); border-radius:9px;"
+            "  padding:1px 8px; color:palette(text); background:transparent;"
+            "}"
+            "QToolButton:checked{"
+            f"  background:{c['filter_active_bg']};"
+            f"  color:{c['filter_active_text']};"
+            f"  border-color:{c['filter_active_border']};"
+            "}"
+        )
+
+    def _on_theme_changed(self, _theme: str | None) -> None:
+        for btn in self._pill_buttons:
+            self._apply_pill_stylesheet(btn)
 
     def _on_pill(self, portnum: str, checked: bool) -> None:
         if checked:

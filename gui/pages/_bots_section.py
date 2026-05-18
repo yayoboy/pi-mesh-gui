@@ -8,7 +8,6 @@ and persists toggles + prefix through ``BotsConfig.set_enabled`` /
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
 from PySide6.QtCore import Qt
@@ -24,13 +23,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.core.tasks import schedule as _schedule
+
 log = logging.getLogger(__name__)
-
-
-def _schedule(coro) -> None:
-    loop = asyncio.get_event_loop_policy().get_event_loop()
-    if loop.is_running():
-        loop.create_task(coro)
 
 
 class _BotRow(QWidget):
