@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 from gui.core.tasks import schedule as _schedule
 from gui.pages._telemetry_format import serialize_telemetry_rows as _serialize_telemetry_rows
 from gui.theme.colors import get_widget_colors
+from gui.widgets import status_icons as _status_icons
 from gui.widgets.multi_sparkline import MultiSparkline
 from gui.widgets.sparkline import Sparkline
 
@@ -210,6 +211,40 @@ class _LocalBoardChart(QFrame):
         )
 
 
+class _MetricCell(QWidget):
+    """Compact icon + label pair, used as a single cell in the metrics row.
+
+    Vector icon (QPainter) avoids the .notdef tofu we used to get on the
+    SPI kiosk for emoji glyphs the fontconfig stack couldn't find.
+    """
+
+    _ICON_PX = 12
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(3)
+        self._icon = QLabel(self)
+        self._icon.setFixedSize(self._ICON_PX, self._ICON_PX)
+        self._text = QLabel("", self)
+        self._text.setProperty("role", "muted")
+        f = self._text.font()
+        f.setPointSize(8)
+        self._text.setFont(f)
+        row.addWidget(self._icon)
+        row.addWidget(self._text)
+        self._icon_cls: type | None = None
+        self._icon_color = "#9aa"
+
+    def set_cell(self, icon_cls: type, text: str, color: str = "#9aa") -> None:
+        if icon_cls is not self._icon_cls or color != self._icon_color:
+            self._icon.setPixmap(_status_icons.icon_pixmap(icon_cls, self._ICON_PX, color))
+            self._icon_cls = icon_cls
+            self._icon_color = color
+        self._text.setText(text)
+
+
 class _NodeTelemetryCard(QFrame):
     """One row per node: short name + battery / voltage / env metrics."""
 
@@ -227,42 +262,101 @@ class _NodeTelemetryCard(QFrame):
         self._layout.addWidget(self._title)
 
         self._metrics_row = QHBoxLayout()
-        self._metrics_row.setSpacing(8)
+        self._metrics_row.setSpacing(10)
         self._layout.addLayout(self._metrics_row)
-        self._labels: list[QLabel] = []
+        self._cells: list[_MetricCell] = []
 
-    def _ensure_labels(self, count: int) -> None:
-        while len(self._labels) < count:
-            l = QLabel("")
-            l.setProperty("role", "muted")
-            f = l.font()
-            f.setPointSize(8)
-            l.setFont(f)
-            self._labels.append(l)
-            self._metrics_row.addWidget(l)
-        for extra in self._labels[count:]:
-            extra.setText("")
+    def _ensure_cells(self, count: int) -> None:
+        while len(self._cells) < count:
+            cell = _MetricCell(self)
+            self._cells.append(cell)
+            # Insert before the trailing stretch (if any). The row was set up
+            # without one in __init__, so just append.
+            self._metrics_row.addWidget(cell)
+        for extra in self._cells[count:]:
+            extra.hide()
+        for visible in self._cells[:count]:
+            visible.show()
 
     def fill(self, info: dict) -> None:
         self._title.setText(info.get("short_name") or "?")
         device = (info.get("device") or {}).get("data") or {}
         env = (info.get("environment") or {}).get("data") or {}
+        power = (info.get("power") or {}).get("data") or {}
+        air = (info.get("air_quality") or {}).get("data") or {}
 
-        cells: list[str] = []
+        si = _status_icons
+        specs: list[tuple[type, str]] = []
+
+        # --- Device metrics ---
         if device.get("battery_level") is not None:
             bl = device["battery_level"]
-            cells.append("🔋 ext" if bl > 100 else f"🔋 {bl}%")
+            specs.append((si.BatteryIcon, "ext" if bl > 100 else f"{bl}%"))
         if device.get("voltage") is not None:
-            cells.append(f"⚡ {device['voltage']:.2f}V")
+            specs.append((si.BoltIcon, f"{device['voltage']:.2f}V"))
+        if device.get("channel_utilization") is not None:
+            specs.append((si.ChannelIcon, f"{device['channel_utilization']:.0f}%"))
+        if device.get("air_util_tx") is not None:
+            specs.append((si.ChannelIcon, f"tx {device['air_util_tx']:.0f}%"))
+        if device.get("uptime_seconds") is not None:
+            specs.append((si.ClockIcon, _fmt_uptime(device["uptime_seconds"])))
+
+        # --- Environment metrics ---
         if env.get("temperature") is not None:
-            cells.append(f"🌡 {env['temperature']:.1f}°C")
+            specs.append((si.ThermoIcon, f"{env['temperature']:.1f}°C"))
         if env.get("relative_humidity") is not None:
-            cells.append(f"💧 {env['relative_humidity']:.0f}%")
+            specs.append((si.DropIcon, f"{env['relative_humidity']:.0f}%"))
         if env.get("barometric_pressure") is not None:
-            cells.append(f"📶 {env['barometric_pressure']:.0f}hPa")
-        self._ensure_labels(len(cells))
-        for lbl, text in zip(self._labels, cells):
-            lbl.setText(text)
+            specs.append((si.GaugeIcon, f"{env['barometric_pressure']:.0f}hPa"))
+        if env.get("gas_resistance") is not None:
+            # gas_resistance can land in kΩ or Ω depending on the firmware;
+            # show a single significant figure to fit the cell width.
+            gr = env["gas_resistance"]
+            specs.append((si.GasIcon,
+                          f"{gr / 1000:.1f}kΩ" if gr >= 1000 else f"{gr:.0f}Ω"))
+        if env.get("iaq") is not None:
+            specs.append((si.IaqIcon, f"IAQ {env['iaq']:.0f}"))
+        # Future-proof: extra environment fields some firmwares may emit.
+        if env.get("lux") is not None:
+            specs.append((si.SunIcon, f"{env['lux']:.0f}lx"))
+        if env.get("uv_lux") is not None or env.get("uv_index") is not None:
+            v = env.get("uv_index") if env.get("uv_index") is not None else env.get("uv_lux")
+            specs.append((si.UvIcon, f"UV {v:.1f}"))
+        if env.get("wind_speed") is not None:
+            specs.append((si.WindIcon, f"{env['wind_speed']:.1f}m/s"))
+        if env.get("wind_direction") is not None:
+            specs.append((si.CompassIcon, f"{env['wind_direction']:.0f}°"))
+        if env.get("rainfall_1h") is not None or env.get("rainfall_24h") is not None:
+            v = (env.get("rainfall_1h") if env.get("rainfall_1h") is not None
+                 else env.get("rainfall_24h"))
+            specs.append((si.RainIcon, f"{v:.1f}mm"))
+        if env.get("weight") is not None:
+            specs.append((si.WeightIcon, f"{env['weight']:.1f}kg"))
+        if env.get("distance") is not None:
+            specs.append((si.RulerIcon, f"{env['distance']:.0f}mm"))
+
+        # --- Power metrics (3 channels) ---
+        for ch in (1, 2, 3):
+            v = power.get(f"ch{ch}_voltage")
+            i = power.get(f"ch{ch}_current")
+            if v is not None:
+                specs.append((si.BoltIcon, f"ch{ch} {v:.2f}V"))
+            if i is not None:
+                specs.append((si.CurrentIcon, f"ch{ch} {i:.0f}mA"))
+
+        # --- Air quality (PMSA0031) ---
+        # Prefer the "environmental" particulate readings if present, fall
+        # back to the "standard" ones; only show the two most-watched sizes
+        # so the row doesn't overflow.
+        for size_key, label in (("pm25", "PM2.5"), ("pm10", "PM10")):
+            v = (air.get(f"{size_key}_environmental")
+                 or air.get(f"{size_key}_standard"))
+            if v is not None:
+                specs.append((si.DustIcon, f"{label} {v:.0f}"))
+
+        self._ensure_cells(len(specs))
+        for cell, (icon_cls, text) in zip(self._cells, specs):
+            cell.set_cell(icon_cls, text)
 
 
 class Page(QWidget):

@@ -504,6 +504,320 @@ class HexIcon(_IconBase):
         p.drawEllipse(QPointF(cx, cy), 1.4, 1.4)
 
 
+class BoltIcon(_IconBase):
+    """Lightning bolt for voltage / power. Replaces the emoji ⚡, which has
+    no glyph in the kiosk font and renders as .notdef tofu."""
+
+    def _draw(self, p: QPainter) -> None:
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        bolt = QPolygonF([
+            QPointF(7.5, 1), QPointF(3, 8),
+            QPointF(6, 8),   QPointF(5, 13),
+            QPointF(10, 6),  QPointF(7, 6),
+            QPointF(9, 1),
+        ])
+        p.drawPolygon(bolt)
+
+
+class ThermoIcon(_IconBase):
+    """Stem + bulb thermometer. Replaces the emoji 🌡."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Stem outline.
+        p.drawLine(QPointF(7, 2), QPointF(7, 9))
+        # Bulb outline.
+        p.drawEllipse(QPointF(7, 11), 2.4, 2.4)
+        # Mercury fill (stem + bulb interior).
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        p.drawRoundedRect(QRectF(6.3, 4, 1.4, 6.5), 0.7, 0.7)
+        p.drawEllipse(QPointF(7, 11), 1.6, 1.6)
+
+
+class DropIcon(_IconBase):
+    """Teardrop for humidity. Replaces the emoji 💧."""
+
+    def _draw(self, p: QPainter) -> None:
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        path = QPainterPath()
+        # Pointy top at (7,1.5), rounded bottom around y≈10.
+        path.moveTo(7, 1.5)
+        path.cubicTo(11.5, 6, 11, 12, 7, 12)
+        path.cubicTo(3, 12, 2.5, 6, 7, 1.5)
+        p.drawPath(path)
+
+
+class GaugeIcon(_IconBase):
+    """Half-dial gauge for pressure. Replaces the emoji 📶 in that slot."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Upper half of a circle (0..180°, Qt arc spans in 1/16ths of a degree).
+        p.drawArc(QRectF(2, 3, 10, 10), 0 * 16, 180 * 16)
+        # Needle pointing up-right.
+        p.drawLine(QPointF(7, 8), QPointF(10.5, 4.5))
+        # Pivot dot.
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        p.drawEllipse(QPointF(7, 8), 1.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Extra sensor icons. Vector-only so they survive on the kiosk linuxfb
+# stack without an emoji font; sized for the 14×14 design grid like the
+# rest. Use the icon_pixmap helper to render at any size.
+# ---------------------------------------------------------------------------
+
+
+class ClockIcon(_IconBase):
+    """Clock face for uptime / time-of-day."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawEllipse(QPointF(7, 7), 5.5, 5.5)
+        # Hour + minute hand pointing to ~10:10 — a classic clock-face pose
+        # that reads as "clock" even at this size.
+        p.drawLine(QPointF(7, 7), QPointF(7, 4))
+        p.drawLine(QPointF(7, 7), QPointF(10, 7))
+
+
+class ChannelIcon(_IconBase):
+    """Three concentric arcs — channel utilization / airtime."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for r in (2.0, 4.0, 6.0):
+            p.drawArc(QRectF(7 - r, 9 - r, r * 2, r * 2),
+                      30 * 16, 120 * 16)
+        # Origin dot.
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        p.drawEllipse(QPointF(7, 9), 0.8, 0.8)
+
+
+class CurrentIcon(_IconBase):
+    """Sine wave — electrical current (Ampere)."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        path = QPainterPath()
+        path.moveTo(1, 7)
+        path.cubicTo(3, 1, 5, 13, 7, 7)
+        path.cubicTo(9, 1, 11, 13, 13, 7)
+        p.drawPath(path)
+
+
+class GasIcon(_IconBase):
+    """Bottle silhouette — gas resistance / VOC sensor."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Neck.
+        p.drawLine(QPointF(6, 1.5), QPointF(8, 1.5))
+        p.drawLine(QPointF(6.5, 1.5), QPointF(6.5, 4))
+        p.drawLine(QPointF(7.5, 1.5), QPointF(7.5, 4))
+        # Body (rounded rect).
+        p.drawRoundedRect(QRectF(3.5, 4, 7, 8.5), 1.8, 1.8)
+        # Fill swirl.
+        p.setPen(QPen(self._color, 0.8))
+        p.drawArc(QRectF(5, 6.5, 4, 3), 0, 180 * 16)
+
+
+class IaqIcon(_IconBase):
+    """Three rising puffs — indoor air quality / particulate haze."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Three horizontal "wisps" at staggered widths.
+        p.drawLine(QPointF(3, 4), QPointF(11, 4))
+        p.drawLine(QPointF(2, 7.5), QPointF(12, 7.5))
+        p.drawLine(QPointF(4, 11), QPointF(10, 11))
+
+
+class DustIcon(_IconBase):
+    """Cluster of dots — particulate matter (PM2.5 / PM10)."""
+
+    def _draw(self, p: QPainter) -> None:
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        for cx, cy, r in [
+            (3.5, 4.0, 1.2), (7.0, 3.0, 0.9), (10.5, 5.0, 1.1),
+            (4.5, 8.5, 1.0), (8.0, 7.5, 1.3), (11.0, 9.5, 0.9),
+            (3.0, 11.5, 0.8), (7.5, 11.0, 1.1),
+        ]:
+            p.drawEllipse(QPointF(cx, cy), r, r)
+
+
+class SunIcon(_IconBase):
+    """Sun disk + rays — light / lux."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Disk.
+        p.drawEllipse(QPointF(7, 7), 2.6, 2.6)
+        # Eight rays.
+        import math as _m
+        for k in range(8):
+            a = _m.radians(k * 45)
+            x1, y1 = 7 + _m.cos(a) * 4.2, 7 + _m.sin(a) * 4.2
+            x2, y2 = 7 + _m.cos(a) * 5.7, 7 + _m.sin(a) * 5.7
+            p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+
+class UvIcon(_IconBase):
+    """Sun + tiny U/V mark — ultraviolet index."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.0)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Half-disk on the left.
+        p.drawEllipse(QPointF(4.5, 7), 3.0, 3.0)
+        # Three rays from the disk.
+        import math as _m
+        for k in (-1, 0, 1):
+            a = _m.radians(180 + k * 35)
+            x1, y1 = 4.5 + _m.cos(a) * 3.6, 7 + _m.sin(a) * 3.6
+            x2, y2 = 4.5 + _m.cos(a) * 5.2, 7 + _m.sin(a) * 5.2
+            p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+        # Tiny "V" mark to disambiguate from a plain SunIcon.
+        p.drawLine(QPointF(9.5, 4.5), QPointF(11, 9))
+        p.drawLine(QPointF(11, 9), QPointF(12.5, 4.5))
+
+
+class WindIcon(_IconBase):
+    """Three wavy gusts — wind speed."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Gust 1: long curve top.
+        path = QPainterPath()
+        path.moveTo(1, 4)
+        path.cubicTo(5, 4, 7, 2.5, 10, 4)
+        p.drawPath(path)
+        p.drawLine(QPointF(10, 4), QPointF(12, 4))
+        # Gust 2: middle.
+        path2 = QPainterPath()
+        path2.moveTo(1, 8)
+        path2.cubicTo(6, 8, 9, 6, 12, 8)
+        p.drawPath(path2)
+        # Gust 3: bottom short.
+        p.drawLine(QPointF(2, 11.5), QPointF(8, 11.5))
+
+
+class CompassIcon(_IconBase):
+    """Compass needle — wind direction / heading."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.0)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Outer ring.
+        p.drawEllipse(QPointF(7, 7), 5.5, 5.5)
+        # Filled north needle (top) and outline south needle (bottom).
+        north = QPolygonF([QPointF(7, 2), QPointF(5.2, 7), QPointF(8.8, 7)])
+        south = QPolygonF([QPointF(7, 12), QPointF(5.2, 7), QPointF(8.8, 7)])
+        p.setBrush(QBrush(self._color))
+        p.drawPolygon(north)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPolygon(south)
+
+
+class RainIcon(_IconBase):
+    """Cloud with droplets — rainfall."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Cloud outline (three bumps).
+        path = QPainterPath()
+        path.moveTo(2.5, 6)
+        path.cubicTo(2.5, 3.5, 5, 2.5, 6, 4)
+        path.cubicTo(7, 2, 10.5, 2.5, 10.5, 5)
+        path.cubicTo(12.5, 5, 12.5, 7.5, 10.5, 7.5)
+        path.lineTo(3.5, 7.5)
+        path.cubicTo(1.5, 7.5, 1.5, 6, 2.5, 6)
+        p.drawPath(path)
+        # Three vertical drops.
+        for x in (4.5, 7, 9.5):
+            p.drawLine(QPointF(x, 9.5), QPointF(x, 12.5))
+
+
+class WeightIcon(_IconBase):
+    """Trapezoid scale — weight."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        # Trapezoid body.
+        poly = QPolygonF([
+            QPointF(2, 12), QPointF(12, 12),
+            QPointF(10.5, 5), QPointF(3.5, 5),
+        ])
+        p.drawPolygon(poly)
+        # Handle on top.
+        p.drawArc(QRectF(4.5, 1.5, 5, 4), 0, 180 * 16)
+
+
+class RulerIcon(_IconBase):
+    """Tick-marked stripe — distance."""
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.2)
+        p.setPen(pen)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(QRectF(1.5, 5, 11, 4))
+        # Tick marks.
+        for x, h in [(3, 2.5), (5, 1.5), (7, 2.5), (9, 1.5), (11, 2.5)]:
+            p.drawLine(QPointF(x, 5), QPointF(x, 5 + h))
+
+
+class HeartIcon(_IconBase):
+    """Filled heart — heart rate / health metrics."""
+
+    def _draw(self, p: QPainter) -> None:
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        path = QPainterPath()
+        path.moveTo(7, 12)
+        path.cubicTo(1.5, 8.5, 1.5, 3.5, 4.5, 3.5)
+        path.cubicTo(6, 3.5, 7, 4.5, 7, 6)
+        path.cubicTo(7, 4.5, 8, 3.5, 9.5, 3.5)
+        path.cubicTo(12.5, 3.5, 12.5, 8.5, 7, 12)
+        p.drawPath(path)
+
+
 # ---------------------------------------------------------------------------
 # Pixmap helper — render any _IconBase subclass into a QPixmap so we can
 # stuff it into a QIcon for QToolButton.setIcon() on the tab bar.
