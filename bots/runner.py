@@ -20,7 +20,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Iterable
+from collections import deque
+from typing import Callable, Iterable
 
 from bots.base import BotBase, BotMessage, BotReply, resolve_destination
 from bots.config import BotsConfig
@@ -31,6 +32,56 @@ log = logging.getLogger(__name__)
 
 TICK_SECONDS = 60
 DEFAULT_BEACON_INTERVAL = 600
+
+# Rate limiting for inbound commands (LoRa airtime is precious: never let a
+# remote node turn every spammed command into a broadcast reply).
+SENDER_COOLDOWN_SECONDS = 10.0   # at most one reply per sender every N s
+GLOBAL_RATE_WINDOW_SECONDS = 60.0
+GLOBAL_RATE_MAX_REPLIES = 12     # max replies dispatched per window, all senders
+
+
+class _RateLimiter:
+    """Per-sender cooldown + global sliding-window cap. Dependency-free.
+
+    ``clock`` is injectable for tests; defaults to ``time.monotonic``.
+    """
+
+    def __init__(self,
+                 cooldown: float = SENDER_COOLDOWN_SECONDS,
+                 window: float = GLOBAL_RATE_WINDOW_SECONDS,
+                 max_per_window: int = GLOBAL_RATE_MAX_REPLIES,
+                 clock: Callable[[], float] = time.monotonic):
+        self._cooldown = cooldown
+        self._window = window
+        self._max_per_window = max_per_window
+        self._clock = clock
+        self._last_by_sender: dict[str, float] = {}
+        self._recent: deque[float] = deque()
+
+    def allow(self, sender: str) -> bool:
+        """True if a command from ``sender`` may be dispatched now.
+
+        Records the grant, so call it only when about to dispatch.
+        """
+        now = self._clock()
+        last = self._last_by_sender.get(sender)
+        if last is not None and (now - last) < self._cooldown:
+            return False
+        while self._recent and (now - self._recent[0]) >= self._window:
+            self._recent.popleft()
+        if len(self._recent) >= self._max_per_window:
+            return False
+        self._last_by_sender[sender] = now
+        self._recent.append(now)
+        if len(self._last_by_sender) > 1024:  # bound memory on hostile input
+            cutoff = now - self._cooldown
+            self._last_by_sender = {
+                s: t for s, t in self._last_by_sender.items() if t > cutoff
+            }
+        return True
+
+
+_rate_limiter = _RateLimiter()
 
 
 class _RunnerState:
@@ -154,7 +205,7 @@ def _build_bot_message(event: dict, prefix: str, local_id: str) -> BotMessage:
     text = event.get("text") or ""
     cmd, args = parse_command(text, prefix)
     return BotMessage(
-        from_id=event.get("from") or event.get("id") or "?",
+        from_id=event.get("from") or "",
         text=text,
         command=cmd,
         args=args,
@@ -186,6 +237,11 @@ async def _message_loop() -> None:
 
         if event.get("type") != "message":
             continue
+        if not event.get("from"):
+            # No sender node id → can't dedupe echoes or route a DM reply.
+            log.debug("bots runner: dropping message event without 'from': %r",
+                      event)
+            continue
         try:
             local_id = meshtasticd_client.get_local_id() or ""
             msg = _build_bot_message(event, _state.config.prefix, local_id)
@@ -202,6 +258,10 @@ async def _dispatch_one(msg: BotMessage) -> None:
     assert _state.config is not None
     enabled = [b for b in _state.bots if _state.config.is_enabled(b.name)]
     if not enabled:
+        return
+    if msg.command is not None and not _rate_limiter.allow(msg.from_id):
+        log.debug("bots runner: rate-limited command %r from %s",
+                  msg.command, msg.from_id)
         return
     results = await asyncio.gather(
         *(_safe_on_message(b, msg) for b in enabled),

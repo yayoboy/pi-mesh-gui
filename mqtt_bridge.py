@@ -42,7 +42,7 @@ def _on_connect(client, userdata, flags, reason_code, properties=None):
         if _ws_dispatch and _loop:
             _loop.call_soon_threadsafe(
                 _loop.create_task,
-                _dispatch('mqtt-status', {'connected': True, 'broker': _config.get('address', '')})
+                _dispatch('mqtt_status', {'connected': True, 'broker': _config.get('address', '')})
             )
     else:
         _connected = False
@@ -56,7 +56,7 @@ def _on_disconnect(client, userdata, flags, reason_code, properties=None):
     if _ws_dispatch and _loop:
         _loop.call_soon_threadsafe(
             _loop.create_task,
-            _dispatch('mqtt-status', {'connected': False, 'broker': _config.get('address', '')})
+            _dispatch('mqtt_status', {'connected': False, 'broker': _config.get('address', '')})
         )
 
 
@@ -74,7 +74,7 @@ def _on_message(client, userdata, msg):
     if _ws_dispatch and _loop:
         _loop.call_soon_threadsafe(
             _loop.create_task,
-            _dispatch('mqtt-message', event_data)
+            _dispatch('mqtt_message', event_data)
         )
 
 

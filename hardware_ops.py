@@ -20,14 +20,17 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 
-async def _run(*argv: str, timeout: float = 10.0) -> tuple[int, str, str]:
+async def _run(
+    *argv: str, timeout: float = 10.0, input_bytes: bytes | None = None,
+) -> tuple[int, str, str]:
     proc = await asyncio.create_subprocess_exec(
         *argv,
+        stdin=asyncio.subprocess.PIPE if input_bytes is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        out, err = await asyncio.wait_for(proc.communicate(input_bytes), timeout=timeout)
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
@@ -162,7 +165,10 @@ async def set_serial_port(port: str) -> None:
     try:
         _CONFIG_ENV_PATH.write_text(new_text)
     except PermissionError:
-        rc, _out, err = await _run("sudo", "tee", str(_CONFIG_ENV_PATH))
+        rc, _out, err = await _run(
+            "sudo", "tee", str(_CONFIG_ENV_PATH),
+            input_bytes=new_text.encode("utf-8"),
+        )
         if rc != 0:
             raise RuntimeError(f"could not write config.env: {err.strip() or rc}")
 

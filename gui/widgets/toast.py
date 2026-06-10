@@ -26,6 +26,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gui.main_window import TABBAR_H
+
 
 _TOAST_QSS = """
 QFrame#toast {
@@ -111,7 +113,10 @@ class ToastHost(QObject):
     _instances: "dict[int, ToastHost]" = {}
 
     DEFAULT_DURATION_MS = 3000
-    BOTTOM_OFFSET = 40   # leave room for the 32 px tab bar.
+    # Keep toasts clear of the bottom tab bar (gui.main_window.TABBAR_H,
+    # currently 44 px) plus a small gap. Imported so the offset tracks any
+    # future tab-bar height change instead of going stale again.
+    BOTTOM_OFFSET = TABBAR_H + 4
 
     def __init__(self, host: QWidget):
         super().__init__(host)

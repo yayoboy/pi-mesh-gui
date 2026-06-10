@@ -61,6 +61,13 @@ QToolButton:checked {{
     color: {accent};
 }}
 
+QFrame#collapsibleSection QToolButton {{
+    border: none;
+    padding: 4px 6px;
+    font-weight: 600;
+    color: {text};
+}}
+
 QFrame#tabbar QToolButton {{
     border-top: 2px solid transparent;
     padding-top: 2px;

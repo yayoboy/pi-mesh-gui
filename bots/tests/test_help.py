@@ -39,6 +39,19 @@ def test_format_help_for_strips_prefix_in_arg():
     assert "!nodes:" in out
 
 
+def test_format_help_for_multichar_prefix_does_not_mangle_target():
+    # lstrip() semantics would turn "beacon" into "eacon" with prefix "@bot".
+    bots = [_FakeBot("beacon", desc="broadcast periodico")]
+    out = format_help_for("@bot", bots, "beacon")
+    assert out == "@botbeacon: broadcast periodico"
+
+
+def test_format_help_for_multichar_prefix_strips_full_prefix_only():
+    bots = [_FakeBot("beacon", desc="x")]
+    out = format_help_for("@bot", bots, "@botbeacon")
+    assert "@botbeacon:" in out
+
+
 def test_format_help_for_unknown_command():
     out = format_help_for("!", [_FakeBot("ping")], "missing")
     assert "sconosciuto" in out

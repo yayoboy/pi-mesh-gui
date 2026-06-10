@@ -51,6 +51,14 @@ DEFAULT_ENABLED: dict[str, bool] = {
 }
 
 
+# Declared per-bot config params ({name: {field: (kind, default, label)}}),
+# used by config.load() to know which bots.<name>.<field> keys to read back.
+CONFIG_SCHEMAS: dict[str, dict] = {
+    cls.name: cls.config_schema
+    for cls in (PingBot, HelpBot, NodesBot, StatusBot, BeaconBot)
+}
+
+
 # Static metadata used by GUI / API to enumerate bots without instantiating
 # them (no need for the data-source callbacks).
 BOT_META: list[dict] = [
@@ -59,4 +67,5 @@ BOT_META: list[dict] = [
 ]
 
 
-__all__ = ["build_default_bots", "DEFAULT_ENABLED", "BOT_META", "BotBase"]
+__all__ = ["build_default_bots", "DEFAULT_ENABLED", "CONFIG_SCHEMAS", "BOT_META",
+           "BotBase"]

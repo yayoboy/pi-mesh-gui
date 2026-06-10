@@ -1,5 +1,6 @@
 # meshtasticd_client.py
 import asyncio
+import json
 import logging
 import math
 import time
@@ -109,11 +110,32 @@ async def request_traceroute(node_id: str) -> None:
 
 async def request_position(node_id: str) -> None:
     """Queue a position request to the given node."""
-    await _command_queue.put(lambda: _interface.requestPosition(node_id))
+    await _command_queue.put(
+        lambda: _interface.sendPosition(destinationId=node_id, wantResponse=True)
+    )
 
 
 async def send_text(text: str, destination_id: str, channel: int = 0) -> None:
-    """Queue a text message to the given destination."""
+    """Persist the outgoing message and queue it to the radio."""
+    if _local_id:
+        try:
+            msg_id = await database.save_message(
+                cfg.DB_PATH, _local_id, channel, text,
+                int(time.time()), True, None, None, destination_id,
+            )
+            _enqueue_event({
+                'type':        'message_saved',
+                'id':          msg_id,
+                'node_id':     _local_id,
+                'channel':     channel,
+                'text':        text,
+                'is_outgoing': True,
+                'destination': destination_id,
+            })
+        except Exception:
+            logger.exception('Failed to persist outgoing message')
+    else:
+        logger.warning('Outgoing message not persisted: local node ID unknown')
     await _command_queue.put(
         lambda: _interface.sendText(text, destinationId=destination_id, channelIndex=channel)
     )
@@ -318,7 +340,7 @@ async def send_admin(dest_node_id: str, operation: str, payload: dict | None = N
             raise RuntimeError(f'Invalid node id: {_dest}')
 
         if _op == 'request_position':
-            _interface.localNode.sendPosition(destinationId=_dest, wantResponse=True)
+            _interface.sendPosition(destinationId=_dest, wantResponse=True)
         elif _op == 'request_telemetry':
             # Send empty admin message to trigger telemetry response
             admin_msg = admin_pb2.AdminMessage()
@@ -877,7 +899,7 @@ def _refresh_node_cache() -> None:
                 'hop_count':     info.get('hopsAway'),
                 'battery_level': metrics.get('batteryLevel'),
                 'is_local':      node_id == _local_id,
-                'raw_json':      str(info),
+                'raw_json':      json.dumps(info, default=str),
                 'distance_km':   None,
                 'rssi':             info.get('rxRssi'),
                 'firmware_version': user.get('firmwareVersion'),
@@ -894,12 +916,12 @@ def _refresh_node_cache() -> None:
 
 
 async def _save_incoming_message(
-    from_id: str, channel: int, text: str, snr, hop_limit, dest: str
+    from_id: str, channel: int, text: str, snr, hop_count, dest: str
 ) -> None:
     now = int(time.time())
     msg_id = await database.save_message(
         cfg.DB_PATH, from_id, channel, text,
-        now, False, snr, hop_limit, dest
+        now, False, snr, hop_count, dest
     )
     typed_event = {
         'type':        'message',
@@ -911,7 +933,7 @@ async def _save_incoming_message(
         'ts':          now,
         'is_outgoing': False,
         'rx_snr':      snr,
-        'hop_count':   hop_limit,
+        'hop_count':   hop_count,
         'ack':         0,
         'destination': dest,
         'is_dm':       bool(dest != '^all' and _local_id and dest == _local_id),
@@ -987,6 +1009,12 @@ def _on_receive(packet, interface) -> None:
     portnum   = packet.get('decoded', {}).get('portnum', 'UNKNOWN')
     snr       = packet.get('rxSnr')
     hop_limit = packet.get('hopLimit')
+    hop_start = packet.get('hopStart')
+    # Hops actually traveled; hopLimit alone is the *remaining* TTL.
+    if hop_start is not None and hop_limit is not None:
+        hops_taken = max(hop_start - hop_limit, 0)
+    else:
+        hops_taken = None
 
     # Emit typed event based on portnum
     decoded = packet.get('decoded', {})
@@ -1018,7 +1046,7 @@ def _on_receive(packet, interface) -> None:
             'hw_model':      user.get('hwModel', ''),
             'last_heard':    int(time.time()),
             'snr':           snr,
-            'hop_count':     hop_limit,
+            'hop_count':     hops_taken,
             'rssi':             packet.get('rxRssi'),
             'firmware_version': user.get('firmwareVersion'),
             'role':             user.get('role'),
@@ -1137,7 +1165,12 @@ def _on_receive(packet, interface) -> None:
 
     elif portnum == 'TRACEROUTE_APP':
         route_discovery = decoded.get('routeDiscovery', {})
-        hops = route_discovery.get('route', [])
+        # Route entries are raw integer node numbers; normalize to '!hex'
+        # ids so they match the node cache / DB keys (like NEIGHBORINFO).
+        hops = [
+            f'!{h:08x}' if isinstance(h, int) else h
+            for h in route_discovery.get('route', [])
+        ]
         _traceroute_cache[from_id] = {
             'node_id': from_id,
             'hops':    hops,
@@ -1161,7 +1194,7 @@ def _on_receive(packet, interface) -> None:
         dest = '^all' if to_num == 0xFFFFFFFF else f'!{to_num:08x}'
         if _loop is not None:
             fut = asyncio.run_coroutine_threadsafe(
-                _save_incoming_message(from_id, channel, text, snr, hop_limit, dest),
+                _save_incoming_message(from_id, channel, text, snr, hops_taken, dest),
                 _loop
             )
             fut.add_done_callback(
@@ -1307,9 +1340,7 @@ async def load_nodes_from_db(db_path: str | None = None) -> None:
 def _do_factory_reset() -> None:
     """Sync helper — factory reset the node."""
     if _interface:
-        _interface.localNode.setOwner('')  # reset owner
-        _interface.localNode.beginSettingsTransaction()
-        _interface.localNode.commitSettingsTransaction()
+        _interface.localNode.factoryReset()
         logger.warning('Factory reset executed')
 
 
@@ -1320,15 +1351,24 @@ async def factory_reset() -> None:
     await _command_queue.put(_do_factory_reset)
 
 
+COMMAND_TIMEOUT = 60.0
+
+
 async def _command_worker() -> None:
     """Consume commands from _command_queue and execute them serially via executor."""
     loop = asyncio.get_running_loop()
     while True:
         cmd_fn = await _command_queue.get()
         try:
-            await loop.run_in_executor(None, cmd_fn)
-        except Exception as e:
-            logger.warning(f'Command execution failed: {e}')
+            await asyncio.wait_for(
+                loop.run_in_executor(None, cmd_fn), timeout=COMMAND_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            # The executor thread may still be stuck, but the queue must not
+            # stall forever behind a dead radio link.
+            logger.error('Command timed out after %ss; dropping it', COMMAND_TIMEOUT)
+        except Exception:
+            logger.exception('Command execution failed')
         finally:
             _command_queue.task_done()
 
@@ -1357,6 +1397,7 @@ async def connect() -> None:
     _flush_worker_task.add_done_callback(_log_task_done)
     backoff = 15
     pub.subscribe(_on_receive, 'meshtastic.receive')
+    pub.subscribe(_on_connection_lost, 'meshtastic.connection.lost')
     while True:
         try:
             logger.warning(f'Connecting to board at {cfg.SERIAL_PATH}')
@@ -1368,15 +1409,42 @@ async def connect() -> None:
             await asyncio.sleep(3)
             _local_id = f'!{_interface.localNode.nodeNum:08x}'
             logger.warning(f'Local node ID: {_local_id}')
-            # Keep alive — poll every 30s
+            # Keep alive — poll every 30s; _on_connection_lost clears _connected
             while _connected:
                 _refresh_node_cache()
                 await asyncio.sleep(30)
+            logger.warning('Board connection lost. Reconnecting...')
+            _close_interface()
         except Exception as e:
             _connected = False
+            _close_interface()
             logger.warning(f'Board connection failed: {e}. Retry in {backoff}s')
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 120)
+
+
+def _close_interface() -> None:
+    """Close and drop the current interface, ignoring errors (it may be dead)."""
+    global _interface
+    iface, _interface = _interface, None
+    if iface is not None:
+        try:
+            iface.close()
+        except Exception:
+            pass
+
+
+def _on_connection_lost(interface=None) -> None:
+    """pubsub callback (radio thread): the serial link died."""
+    global _connected
+    if not _connected:
+        return
+    _connected = False
+    logger.warning('meshtastic.connection.lost received')
+    if _loop is not None:
+        _loop.call_soon_threadsafe(
+            _enqueue_event, {'type': 'connection', 'connected': False}
+        )
 
 
 async def disconnect() -> None:

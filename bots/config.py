@@ -43,8 +43,14 @@ class BotsConfig:
 
         ``default_enabled`` is ``{name: bool}`` from the bot registry; used
         only as a fallback when the DB has no value for ``bots.<name>.enabled``.
+
+        Per-bot params declared in each bot's ``config_schema`` (exposed via
+        ``bots.CONFIG_SCHEMAS``) are loaded too, so values persisted with
+        ``set()`` survive a restart. Params absent from the DB are left out
+        of the cache so ``get_param`` falls back to the caller's default.
         """
         import database
+        from bots import CONFIG_SCHEMAS
 
         prefix = await database.get_setting(PREFIX_KEY, DEFAULT_PREFIX)
         self._cache[PREFIX_KEY] = prefix or DEFAULT_PREFIX
@@ -55,6 +61,12 @@ class BotsConfig:
             if value is None:
                 value = "1" if default else "0"
             self._cache[key] = str(value)
+
+            for field in CONFIG_SCHEMAS.get(name, {}):
+                pkey = param_key(name, field)
+                pvalue = await database.get_setting(pkey, None)
+                if pvalue is not None:
+                    self._cache[pkey] = str(pvalue)
 
     async def set(self, key: str, value: str) -> None:
         import database

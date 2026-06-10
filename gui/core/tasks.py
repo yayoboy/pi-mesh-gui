@@ -25,6 +25,23 @@ from typing import Coroutine
 log = logging.getLogger(__name__)
 
 
+# Strong references to in-flight tasks. The event loop only keeps weak refs
+# to tasks, so without this a scheduled task can be garbage-collected before
+# it finishes; it also lets us log exceptions when they happen rather than
+# at GC time. Mirrors the pattern used for the background tasks in gui.app.
+_scheduled: set[asyncio.Task] = set()
+
+
+def _on_task_done(task: asyncio.Task) -> None:
+    _scheduled.discard(task)
+    try:
+        task.result()
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        log.exception("scheduled task %s crashed", task.get_name())
+
+
 def schedule(coro: Coroutine) -> asyncio.Task | None:
     """Schedule ``coro`` on the running qasync loop.
 
@@ -38,4 +55,7 @@ def schedule(coro: Coroutine) -> asyncio.Task | None:
         log.warning("schedule(): no running loop, dropping %r", coro)
         coro.close()
         return None
-    return loop.create_task(coro)
+    task = loop.create_task(coro)
+    _scheduled.add(task)
+    task.add_done_callback(_on_task_done)
+    return task

@@ -1,8 +1,12 @@
-"""!ping → pong (with one-way RTT estimate based on the packet timestamp)."""
+"""!ping → pong.
+
+Note: we deliberately make no latency claim. ``msg.ts`` is stamped when
+the packet is received locally, so any delta measured here is internal
+queue latency, not radio transit time.
+"""
 
 from __future__ import annotations
 
-import time
 from typing import Iterable
 
 from bots.base import BotBase, BotMessage, BotReply
@@ -10,13 +14,10 @@ from bots.base import BotBase, BotMessage, BotReply
 
 class PingBot(BotBase):
     name = "ping"
-    description = "Risponde a !ping con 'pong' e RTT one-way (ms)."
+    description = "Risponde a !ping con 'pong'."
     default_enabled = True
 
     async def on_message(self, msg: BotMessage) -> Iterable[BotReply]:
         if not self.matches(msg, "ping"):
             return ()
-        # The radio packet ts is in seconds; convert to ms relative to now.
-        rtt_ms = max(0, int((time.time() - msg.ts) * 1000)) if msg.ts else None
-        suffix = f" (one-way ~{rtt_ms} ms)" if rtt_ms is not None else ""
-        return (BotReply(text=f"pong{suffix}"),)
+        return (BotReply(text="pong"),)

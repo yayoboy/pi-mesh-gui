@@ -1,5 +1,6 @@
 # database.py
 import aiosqlite
+import asyncio
 import json
 import logging
 import time
@@ -10,6 +11,11 @@ logger = logging.getLogger(__name__)
 # Persistent connection (WAL mode allows concurrent reads with single writer)
 _db: aiosqlite.Connection | None = None
 _db_path: str | None = None
+
+# Serializes multi-statement transactions. With a single shared connection,
+# two tasks interleaving at await points would otherwise cross-commit each
+# other's half-finished transactions.
+_tx_lock = asyncio.Lock()
 
 
 @asynccontextmanager
@@ -216,6 +222,15 @@ async def init(db_path: str) -> None:
                 await db.execute(f'ALTER TABLE nodes ADD COLUMN {col} {col_type}')
 
         await db.commit()
+        # WAL/SHM sidecars are created by SQLite after the chmod above and
+        # hold recent content (PSKs, messages) — restrict them too.
+        for suffix in ('-wal', '-shm'):
+            sidecar = db_path + suffix
+            if os.path.exists(sidecar):
+                try:
+                    os.chmod(sidecar, 0o600)
+                except OSError as e:
+                    logger.warning('Could not chmod 0600 on %s: %s', sidecar, e)
     logger.info(f'Database initialized: {db_path}')
 
 
@@ -262,7 +277,7 @@ async def bulk_upsert_nodes(db_path: str, nodes: list[dict]) -> None:
     """Upsert multiple nodes in a single transaction."""
     if not nodes:
         return
-    async with _get_db() as db:
+    async with _tx_lock, _get_db() as db:
         for node in nodes:
             await db.execute(
                 '''INSERT INTO nodes
@@ -316,7 +331,7 @@ async def get_all_nodes(db_path: str) -> list[dict]:
 
 async def delete_node(db_path: str, node_id: str, purge: bool = False) -> None:
     """Delete a node from DB. If purge=True, also remove messages and telemetry."""
-    async with _get_db() as db:
+    async with _tx_lock, _get_db() as db:
         if purge:
             await db.execute('DELETE FROM messages WHERE node_id = ?', (node_id,))
             await db.execute('DELETE FROM packets WHERE from_id = ?', (node_id,))

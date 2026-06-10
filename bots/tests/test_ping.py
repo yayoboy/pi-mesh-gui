@@ -1,5 +1,3 @@
-import time
-
 import pytest
 
 from bots.base import BotMessage
@@ -14,19 +12,21 @@ def _msg(command="ping", ts=0):
 
 
 @pytest.mark.asyncio
-async def test_ping_returns_pong_with_rtt():
+async def test_ping_returns_plain_pong():
     bot = PingBot()
-    out = list(await bot.on_message(_msg(ts=int(time.time()) - 1)))
+    out = list(await bot.on_message(_msg(ts=12345)))
     assert len(out) == 1
-    assert out[0].text.startswith("pong")
-    assert "ms" in out[0].text
+    assert out[0].text == "pong"
 
 
 @pytest.mark.asyncio
-async def test_ping_without_ts_omits_rtt_suffix():
+async def test_ping_makes_no_latency_claim():
+    # msg.ts is the local receive timestamp, so any delta would only
+    # measure internal queue latency — the reply must not pretend it's RTT.
     bot = PingBot()
-    out = list(await bot.on_message(_msg(ts=0)))
-    assert out[0].text == "pong"
+    out = list(await bot.on_message(_msg(ts=1)))
+    assert "ms" not in out[0].text
+    assert "RTT" not in out[0].text
 
 
 @pytest.mark.asyncio

@@ -49,6 +49,19 @@ QPushButton[modkey="true"]:checked { background: #4a9eff; color: #ffffff; }
 """
 
 
+def _make_key(text: str, parent: QWidget) -> QPushButton:
+    """Create a keyboard key button.
+
+    Every key must have ``NoFocus``: otherwise tapping a key moves focus
+    from the target line edit to the button, ``focusChanged`` fires before
+    ``clicked``, and ``VkbController`` hides the keyboard and clears its
+    target before the keypress is delivered.
+    """
+    btn = QPushButton(text, parent)
+    btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    return btn
+
+
 class VirtualKeyboard(QFrame):
     """Three-page software keyboard. Emits ``key_pressed(str)`` for chars,
     ``backspace`` for backspace, and ``done`` when the user dismisses it."""
@@ -108,7 +121,7 @@ class VirtualKeyboard(QFrame):
 
             # Shift key on last alpha row
             if r == 2 and self._page == self.PAGE_ALPHA:
-                shift = QPushButton("⇧", row_w)
+                shift = _make_key("⇧", row_w)
                 shift.setProperty("modkey", True)
                 shift.setCheckable(True)
                 shift.setChecked(self._shift)
@@ -118,13 +131,13 @@ class VirtualKeyboard(QFrame):
 
             for ch in row_chars:
                 display = ch.upper() if (self._shift and self._page == self.PAGE_ALPHA) else ch
-                btn = QPushButton(display, row_w)
+                btn = _make_key(display, row_w)
                 btn.clicked.connect(lambda _checked=False, c=display: self._press_char(c))
                 row_layout.addWidget(btn)
 
             # Backspace on last row
             if r == len(rows) - 1:
-                bs = QPushButton("⌫", row_w)
+                bs = _make_key("⌫", row_w)
                 bs.setProperty("modkey", True)
                 bs.setMinimumWidth(34)
                 bs.clicked.connect(self._press_backspace)
@@ -138,7 +151,7 @@ class VirtualKeyboard(QFrame):
         bl.setContentsMargins(0, 0, 0, 0)
         bl.setSpacing(2)
 
-        sym = QPushButton(
+        sym = _make_key(
             "123" if self._page == self.PAGE_ALPHA
             else "#+=" if self._page == self.PAGE_SYM
             else "ABC",
@@ -149,23 +162,24 @@ class VirtualKeyboard(QFrame):
         sym.clicked.connect(self._toggle_sym)
         bl.addWidget(sym)
 
-        comma = QPushButton(",", bottom)
+        comma = _make_key(",", bottom)
         comma.clicked.connect(lambda: self._press_char(","))
         bl.addWidget(comma)
 
-        space = QPushButton(" ", bottom)
+        space = _make_key(" ", bottom)
         space.setMinimumWidth(120)
         space.clicked.connect(lambda: self._press_char(" "))
         bl.addWidget(space, 1)
 
-        period = QPushButton(".", bottom)
+        period = _make_key(".", bottom)
         period.clicked.connect(lambda: self._press_char("."))
         bl.addWidget(period)
 
-        done = QPushButton("✓", bottom)
+        done = _make_key("✓", bottom)
         done.setProperty("modkey", True)
         done.setMinimumWidth(40)
-        done.clicked.connect(self.done.emit)
+        # clicked carries a bool; done is a zero-arg Signal, so drop it.
+        done.clicked.connect(lambda: self.done.emit())
         bl.addWidget(done)
 
         self._rows_layout.addWidget(bottom)

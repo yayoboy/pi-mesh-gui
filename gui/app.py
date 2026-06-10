@@ -56,12 +56,57 @@ def _build_qapplication():
     return app
 
 
+def _try_get_settings():
+    """Return the global Settings singleton, or ``None`` when it is not
+    initialised yet (e.g. scripts/capture_screenshots.py calls apply_theme
+    without a database)."""
+    try:
+        from gui.core.settings import get_settings
+        return get_settings()
+    except Exception:
+        return None
+
+
+def _load_custom_palette(settings) -> dict | None:
+    """Parse the persisted ``pimesh-custom-theme`` setting into a palette dict.
+
+    Returns ``None`` (with a logged warning) when the value is missing or
+    invalid — the caller then falls back to the default theme instead of
+    crashing at startup.
+    """
+    raw = settings.get("pimesh-custom-theme")
+    if not raw:
+        log.warning("theme is 'custom' but pimesh-custom-theme is not set")
+        return None
+    if isinstance(raw, dict):
+        data = raw
+    else:
+        import json
+        try:
+            data = json.loads(raw)
+        except (TypeError, ValueError):
+            log.warning("pimesh-custom-theme is not valid JSON, ignoring")
+            return None
+    if not isinstance(data, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in data.items()
+    ):
+        log.warning("pimesh-custom-theme is not a dict of color strings, ignoring")
+        return None
+    return data
+
+
 def apply_theme(app, palette_name: str = "dark", custom: dict | None = None) -> None:
     """Apply a palette to the running ``QApplication``.
 
     Sets both QSS (controls all custom styling) and QPalette (so native
     widgets that ignore stylesheets — file dialogs, message boxes — still
     pick up the colors).
+
+    Never raises on bad input: an unknown theme name or a missing/invalid
+    ``pimesh-custom-theme`` falls back to the "dark" palette with a logged
+    warning, so a bad persisted setting cannot crash the GUI at boot.
+    Also reads ``pimesh-accent`` from settings (when available) and overrides
+    the palette's accent color before the QSS is built.
     """
     from PySide6.QtGui import QColor, QPalette
 
@@ -69,8 +114,30 @@ def apply_theme(app, palette_name: str = "dark", custom: dict | None = None) -> 
     from gui.theme.qss import build_qss
 
     if palette_name not in PALETTES and palette_name != "custom":
+        log.warning("unknown theme %r, falling back to 'dark'", palette_name)
         palette_name = "dark"
-    palette = get_palette(palette_name, custom=custom)
+
+    settings = _try_get_settings()
+
+    if palette_name == "custom" and custom is None and settings is not None:
+        custom = _load_custom_palette(settings)
+
+    try:
+        palette = dict(get_palette(palette_name, custom=custom))
+    except (KeyError, ValueError) as exc:
+        log.warning("theme %r unusable (%s), falling back to 'dark'", palette_name, exc)
+        palette = dict(get_palette("dark"))
+
+    # Accent override from the Config page color picker (pimesh-accent).
+    if settings is not None:
+        accent = settings.get("pimesh-accent")
+        if accent:
+            color = QColor(accent)
+            if color.isValid():
+                palette["accent"] = color.name()
+            else:
+                log.warning("ignoring invalid pimesh-accent %r", accent)
+
     app.setStyleSheet(build_qss(palette))
 
     qp = app.palette()

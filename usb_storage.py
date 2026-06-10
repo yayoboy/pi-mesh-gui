@@ -82,13 +82,28 @@ def _auto_mount(device: dict) -> str | None:
         if result.returncode == 0:
             logger.info('Mounted %s at %s', dev_path, mount_dir)
             return mount_dir
-        # Already mounted somewhere?
+        # Already mounted somewhere? lsblk said it wasn't, so re-query the
+        # actual mount point instead of returning the stale (None) value.
         if 'already mounted' in result.stderr.lower():
-            return device.get('mountpoint')
+            return _query_mountpoint(dev_path)
         logger.warning('Mount failed: %s', result.stderr.strip())
     except Exception as e:
         logger.warning('Mount error: %s', e)
     return None
+
+
+def _query_mountpoint(dev_path: str) -> str | None:
+    """Return the current mount point of a device, or None."""
+    try:
+        result = subprocess.run(
+            ['lsblk', '-no', 'MOUNTPOINT', dev_path],
+            capture_output=True, text=True, timeout=5
+        )
+        mp = result.stdout.strip()
+        return mp or None
+    except Exception as e:
+        logger.warning('lsblk mountpoint query failed: %s', e)
+        return None
 
 
 def get_usb_status() -> dict:
@@ -184,10 +199,14 @@ def restore_tiles_to_sd(tiles_src: str) -> dict:
         return {'ok': False, 'error': 'Tile su USB non trovate'}
 
     try:
-        # Remove symlink
+        # Copy to a temp dir first so a failed copy (USB yanked mid-way)
+        # leaves the symlink — and thus the working tiles — untouched.
+        tmp_dst = tiles_src + '.restore-tmp'
+        if os.path.exists(tmp_dst):
+            shutil.rmtree(tmp_dst)
+        shutil.copytree(usb_path, tmp_dst)
         os.unlink(tiles_src)
-        # Copy back from USB
-        shutil.copytree(usb_path, tiles_src)
+        os.rename(tmp_dst, tiles_src)
 
         logger.info('Tiles restored to SD: %s', tiles_src)
         return {'ok': True, 'message': 'Tile ripristinate su SD'}

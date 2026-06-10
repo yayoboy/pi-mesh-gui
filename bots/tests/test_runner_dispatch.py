@@ -17,6 +17,7 @@ from bots.runner import (
     _build_bot_message,
     _is_dm_for_local,
     _safe_on_message,
+    _RateLimiter,
 )
 
 
@@ -64,6 +65,14 @@ def test_build_bot_message_ts_defaults_to_now_if_missing():
     before = int(time.time())
     msg = _build_bot_message(event, "!", local_id="!local")
     assert before <= msg.ts <= int(time.time()) + 1
+
+
+def test_build_bot_message_does_not_fall_back_to_db_row_id():
+    # event["id"] is the integer DB row id, not a node id: it must never
+    # leak into from_id (it broke the self-echo check / DM destinations).
+    event = {"type": "message", "text": "x", "id": 42}
+    msg = _build_bot_message(event, "!", local_id="!local")
+    assert msg.from_id == ""
 
 
 # --- _is_dm_for_local ----------------------------------------------------
@@ -156,6 +165,7 @@ async def test_dispatch_runs_every_enabled_bot_and_sends_replies(monkeypatch):
     monkeypatch.setattr(runner._state, "bots",
                         [_AlwaysReplies(), _Raises(), _OffBot()])
     monkeypatch.setattr(runner._state, "config", fake_cfg)
+    monkeypatch.setattr(runner, "_rate_limiter", _RateLimiter())
 
     msg = BotMessage(
         from_id="!sender", text="!always", command="always", args=[],
@@ -169,3 +179,177 @@ async def test_dispatch_runs_every_enabled_bot_and_sends_replies(monkeypatch):
     # Raises → swallowed (no send).
     # Off bot → not invoked.
     assert all(t[0] != "should-not-send" for t in sent)
+
+
+# --- rate limiting --------------------------------------------------------
+
+class _FakeClock:
+    def __init__(self, start: float = 1000.0):
+        self.now = start
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+def test_rate_limiter_per_sender_cooldown():
+    clock = _FakeClock()
+    rl = _RateLimiter(cooldown=10.0, window=60.0, max_per_window=100,
+                      clock=clock)
+    assert rl.allow("!a") is True
+    assert rl.allow("!a") is False           # within cooldown
+    clock.advance(9.9)
+    assert rl.allow("!a") is False           # still within cooldown
+    clock.advance(0.2)
+    assert rl.allow("!a") is True            # cooldown expired
+
+
+def test_rate_limiter_cooldown_is_per_sender():
+    clock = _FakeClock()
+    rl = _RateLimiter(cooldown=10.0, window=60.0, max_per_window=100,
+                      clock=clock)
+    assert rl.allow("!a") is True
+    assert rl.allow("!b") is True            # different sender unaffected
+
+
+def test_rate_limiter_global_cap_and_window_expiry():
+    clock = _FakeClock()
+    rl = _RateLimiter(cooldown=0.0, window=60.0, max_per_window=3,
+                      clock=clock)
+    senders = [f"!s{i}" for i in range(5)]
+    grants = [rl.allow(s) for s in senders]
+    assert grants == [True, True, True, False, False]  # capped at 3/window
+    clock.advance(60.0)
+    assert rl.allow("!s9") is True           # old grants aged out
+
+
+@pytest.mark.asyncio
+async def test_dispatch_drops_rate_limited_commands(monkeypatch):
+    from bots import runner
+
+    sent: list[tuple[str, str, int]] = []
+
+    class _FakeMC:
+        @staticmethod
+        async def send_text(text, dest, channel=0):
+            sent.append((text, dest, channel))
+
+    monkeypatch.setitem(__import__("sys").modules, "meshtasticd_client", _FakeMC)
+
+    class _Cfg:
+        prefix = "!"
+
+        def is_enabled(self, name: str) -> bool:
+            return True
+
+    monkeypatch.setattr(runner._state, "bots", [_AlwaysReplies()])
+    monkeypatch.setattr(runner._state, "config", _Cfg())
+    clock = _FakeClock()
+    monkeypatch.setattr(runner, "_rate_limiter",
+                        _RateLimiter(cooldown=10.0, window=60.0,
+                                     max_per_window=100, clock=clock))
+
+    def cmd_msg(sender: str) -> BotMessage:
+        return BotMessage(
+            from_id=sender, text="!always", command="always", args=[],
+            channel=0, is_dm=False, ts=0,
+        )
+
+    await runner._dispatch_one(cmd_msg("!spammer"))
+    await runner._dispatch_one(cmd_msg("!spammer"))   # silently dropped
+    assert len(sent) == 1
+
+    clock.advance(10.1)
+    await runner._dispatch_one(cmd_msg("!spammer"))   # cooldown expired
+    assert len(sent) == 2
+
+
+@pytest.mark.asyncio
+async def test_dispatch_does_not_rate_limit_non_command_messages(monkeypatch):
+    from bots import runner
+
+    sent: list[tuple[str, str, int]] = []
+
+    class _FakeMC:
+        @staticmethod
+        async def send_text(text, dest, channel=0):
+            sent.append((text, dest, channel))
+
+    monkeypatch.setitem(__import__("sys").modules, "meshtasticd_client", _FakeMC)
+
+    class _Cfg:
+        prefix = "!"
+
+        def is_enabled(self, name: str) -> bool:
+            return True
+
+    monkeypatch.setattr(runner._state, "bots", [_AlwaysReplies()])
+    monkeypatch.setattr(runner._state, "config", _Cfg())
+    monkeypatch.setattr(runner, "_rate_limiter",
+                        _RateLimiter(cooldown=10.0, window=60.0,
+                                     max_per_window=100, clock=_FakeClock()))
+
+    plain = BotMessage(
+        from_id="!a", text="hello", command=None, args=[],
+        channel=0, is_dm=False, ts=0,
+    )
+    await runner._dispatch_one(plain)
+    await runner._dispatch_one(plain)
+    assert len(sent) == 2  # plain chat doesn't burn the sender's cooldown
+
+
+# --- _message_loop drops events without a sender ------------------------
+
+@pytest.mark.asyncio
+async def test_message_loop_skips_events_without_from(monkeypatch):
+    import asyncio
+
+    from bots import runner
+
+    dispatched: list[BotMessage] = []
+
+    class _FakeMC:
+        @staticmethod
+        def get_local_id() -> str:
+            return "!local"
+
+    monkeypatch.setitem(__import__("sys").modules, "meshtasticd_client", _FakeMC)
+
+    class _Cfg:
+        prefix = "!"
+
+        def is_enabled(self, name: str) -> bool:
+            return True
+
+    async def fake_dispatch(msg: BotMessage) -> None:
+        dispatched.append(msg)
+
+    queue: asyncio.Queue = asyncio.Queue()
+    monkeypatch.setattr(runner._state, "queue", queue)
+    monkeypatch.setattr(runner._state, "config", _Cfg())
+    monkeypatch.setattr(runner, "_dispatch_one", fake_dispatch)
+
+    # No "from" (only the DB row id) → must be skipped, not dispatched.
+    queue.put_nowait({"type": "message", "text": "!ping", "id": 7})
+    # Self-echo → skipped.
+    queue.put_nowait({"type": "message", "text": "!ping", "from": "!local"})
+    # Valid remote sender → dispatched.
+    queue.put_nowait({"type": "message", "text": "!ping", "from": "!remote"})
+
+    task = asyncio.get_running_loop().create_task(runner._message_loop())
+    try:
+        # Let the loop drain the queue.
+        for _ in range(100):
+            if queue.empty() and dispatched:
+                break
+            await asyncio.sleep(0.01)
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    assert [m.from_id for m in dispatched] == ["!remote"]

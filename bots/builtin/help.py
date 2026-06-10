@@ -25,7 +25,9 @@ def format_help(prefix: str, bots: list[BotBase]) -> str:
 
 def format_help_for(prefix: str, bots: list[BotBase], target: str) -> str:
     """Format the detail line for a single bot."""
-    target = target.lower().lstrip(prefix)
+    # removeprefix, not lstrip: lstrip treats the prefix as a char set and
+    # would mangle e.g. "beacon" -> "eacon" with a multi-char prefix "@bot".
+    target = target.lower().removeprefix(prefix.lower())
     bot = next((b for b in bots if b.name == target), None)
     if bot is None:
         return f"Comando sconosciuto: {target}"

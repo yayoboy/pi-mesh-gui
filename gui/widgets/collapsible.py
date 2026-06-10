@@ -28,10 +28,11 @@ class CollapsibleSection(QFrame):
         self.setFrameShadow(QFrame.Shadow.Plain)
 
         self._toggle = QToolButton(self)
-        self._toggle.setStyleSheet(
-            "QToolButton { border: none; padding: 4px 6px; font-weight: 600; "
-            "color: var(--text); }"
-        )
+        # Styled by the app-wide stylesheet (gui/theme/qss.py,
+        # "QFrame#collapsibleSection QToolButton") so the header text color
+        # follows the active palette. A local stylesheet previously used
+        # "color: var(--text)", which is not valid QSS: Qt rejected the whole
+        # rule and the header lost all styling.
         self._toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self._toggle.setArrowType(Qt.ArrowType.RightArrow)
         self._toggle.setText(title)
