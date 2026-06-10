@@ -141,6 +141,10 @@ class Page(QWidget):
         except Exception:
             log.exception("get_telemetry failed")
             rows = []
+        # The user may have selected another node while we awaited the DB —
+        # drop stale results instead of letting the last finisher win.
+        if node_id != self._selected_node:
+            return
         self._rows.clear()
         # Re-populate the battery sparkline from oldest → newest so the
         # rightmost sample is the latest reading.

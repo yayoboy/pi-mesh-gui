@@ -56,9 +56,11 @@ class _GpioDeviceDialog(QDialog):
             lambda c: self._enabled.setText("enabled" if c else "disabled")
         )
         self._enabled.setText("enabled" if self._enabled.isChecked() else "disabled")
-        self._pin_a = QSpinBox(self); self._pin_a.setRange(0, 64); self._pin_a.setValue(int(d.get("pin_a") or 0))
-        self._pin_b = QSpinBox(self); self._pin_b.setRange(0, 64); self._pin_b.setValue(int(d.get("pin_b") or 0))
-        self._pin_sw = QSpinBox(self); self._pin_sw.setRange(0, 64); self._pin_sw.setValue(int(d.get("pin_sw") or 0))
+        # Pins use -1 (shown as "—") as the explicit "not set" sentinel so
+        # BCM pin 0 stays a valid selectable value.
+        self._pin_a = self._make_pin_spin(d.get("pin_a"))
+        self._pin_b = self._make_pin_spin(d.get("pin_b"))
+        self._pin_sw = self._make_pin_spin(d.get("pin_sw"))
         self._i2c_bus = QSpinBox(self); self._i2c_bus.setRange(0, 7); self._i2c_bus.setValue(int(d.get("i2c_bus") or 1))
         self._i2c_addr = QLineEdit(d.get("i2c_address") or "")
         self._sensor_type = QLineEdit(d.get("sensor_type") or "")
@@ -86,14 +88,28 @@ class _GpioDeviceDialog(QDialog):
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
 
+    def _make_pin_spin(self, value) -> QSpinBox:
+        spin = QSpinBox(self)
+        spin.setRange(-1, 64)
+        spin.setSpecialValueText("—")  # minimum (-1) renders as "not set"
+        spin.setValue(int(value) if value is not None else -1)
+        return spin
+
+    @staticmethod
+    def _pin_value(spin: QSpinBox) -> int | None:
+        """Map only the explicit sentinel (the spinbox minimum) to None so
+        BCM pin 0 round-trips as a real pin."""
+        v = spin.value()
+        return None if v == spin.minimum() else v
+
     def to_payload(self) -> dict:
         return {
             "type":         self._type.currentText(),
             "name":         self._name.text().strip(),
             "enabled":      1 if self._enabled.isChecked() else 0,
-            "pin_a":        self._pin_a.value() or None,
-            "pin_b":        self._pin_b.value() or None,
-            "pin_sw":       self._pin_sw.value() or None,
+            "pin_a":        self._pin_value(self._pin_a),
+            "pin_b":        self._pin_value(self._pin_b),
+            "pin_sw":       self._pin_value(self._pin_sw),
             "i2c_bus":      self._i2c_bus.value(),
             "i2c_address":  self._i2c_addr.text().strip() or None,
             "sensor_type":  self._sensor_type.text().strip() or None,

@@ -154,8 +154,6 @@ class Page(QWidget):
             self._append(entry)
 
     def _append(self, event: dict | str) -> None:
-        if self._paused:
-            return
         if isinstance(event, dict):
             line = format_log_line(event)
             portnum = event.get("portnum") or event.get("decoded_portnum") or ""
@@ -166,7 +164,14 @@ class Page(QWidget):
             line = str(event)
             portnum = ""
             self._lines.append({"text": line})
+        # Cap the raw-event cache like the view (trim oldest from the front).
+        if len(self._lines) > _MAX_LINES:
+            del self._lines[: len(self._lines) - _MAX_LINES]
 
+        # While paused we still record events (so Resume / export / filters
+        # see them) — we just don't render.
+        if self._paused:
+            return
         if self._filter and self._filter.lower() not in line.lower():
             return
         if self._portnum_filters and (portnum not in self._portnum_filters):
@@ -288,9 +293,15 @@ class Page(QWidget):
     def _on_pause(self, paused: bool) -> None:
         self._paused = paused
         self._pause_btn.setText("Resume" if paused else "Pause")
+        if not paused:
+            # Catch up on the lines recorded while paused.
+            self._rerender()
 
     @Slot()
     def _on_clear(self) -> None:
+        # Drop the raw cache too — otherwise filter changes and TSV export
+        # resurrect "cleared" lines.
+        self._lines.clear()
         self._view.clear()
         self._update_count()
 

@@ -29,12 +29,21 @@ def test_aes128_psk_is_valid():
     assert is_valid_psk_b64(base64.b64encode(b"\x00" * 16).decode())
 
 
+def test_one_byte_preset_psk_is_valid():
+    # 1-byte PSKs are the Meshtastic preset-key selectors ("AQ==" = default).
+    assert is_valid_psk_b64("AQ==") is True
+    for i in range(11):
+        assert is_valid_psk_b64(base64.b64encode(bytes([i])).decode()) is True
+
+
 def test_garbage_is_rejected():
     assert is_valid_psk_b64("not-base64!!!") is False
 
 
 def test_wrong_length_is_rejected():
-    # 8 bytes — too short for AES-128.
+    # 8 bytes — too short for AES-128 (and not a 1-byte preset selector).
     assert is_valid_psk_b64(base64.b64encode(b"\x00" * 8).decode()) is False
     # 64 bytes — too long.
     assert is_valid_psk_b64(base64.b64encode(b"\x00" * 64).decode()) is False
+    # 2 bytes — not a legal preset / key length either.
+    assert is_valid_psk_b64(base64.b64encode(b"\x00" * 2).decode()) is False

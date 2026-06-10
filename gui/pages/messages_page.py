@@ -37,10 +37,30 @@ from gui.widgets.status_icons import MenuIcon, TrashIcon, icon_pixmap
 log = logging.getLogger(__name__)
 
 
+def _tick_oldest_pending(pending: list[QListWidgetItem]) -> bool:
+    """Append " ✓" to the oldest pending outgoing item and drop it.
+
+    Acks arrive oldest-first, so the head of the list is the right target.
+    Items whose underlying C++ object was deleted (list cleared/reloaded)
+    are skipped. Returns True when an item was ticked.
+    """
+    while pending:
+        item = pending.pop(0)
+        try:
+            item.setText(item.text() + " ✓")
+        except RuntimeError:
+            continue
+        return True
+    return False
+
+
 class _BroadcastView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._oldest_id: int | None = None  # for "load more" pagination
+        # Outgoing items awaiting an ack, oldest first. Acks arrive
+        # oldest-first so on_ack ticks the head of this list.
+        self._pending_acks: list[QListWidgetItem] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -123,6 +143,7 @@ class _BroadcastView(QWidget):
             msgs = []
 
         self.list.clear()
+        self._pending_acks.clear()
         self._oldest_id = msgs[0]["id"] if msgs and "id" in msgs[0] else None
         if self._oldest_id:
             self._add_load_more_item()
@@ -140,13 +161,14 @@ class _BroadcastView(QWidget):
         item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
         self.list.insertItem(0, item)
 
-    def _append(self, msg: dict) -> None:
+    def _append(self, msg: dict) -> QListWidgetItem:
         item = QListWidgetItem(format_message(msg))
         if msg.get("is_outgoing"):
             f = item.font()
             f.setItalic(True)
             item.setFont(f)
         self.list.addItem(item)
+        return item
 
     def _prepend_below_loader(self, msg: dict) -> None:
         item = QListWidgetItem(format_message(msg))
@@ -213,6 +235,7 @@ class _BroadcastView(QWidget):
             log.exception("clear messages failed")
             return
         self.list.clear()
+        self._pending_acks.clear()
         self.info.setText("cleared")
 
     def _show_canned_menu(self) -> None:
@@ -257,13 +280,15 @@ class _BroadcastView(QWidget):
         self._append(msg)
         self._scroll_bottom()
 
+    def has_pending_ack(self) -> bool:
+        return bool(self._pending_acks)
+
     @Slot(dict)
     def on_ack(self, event: dict) -> None:
-        for i in range(self.list.count() - 1, -1, -1):
-            item = self.list.item(i)
-            if "me:" in item.text() and "✓" not in item.text():
-                item.setText(item.text() + " ✓")
-                break
+        # Tick the OLDEST pending outgoing item: acks arrive oldest-first.
+        # Never substring-match message text — only explicitly tracked
+        # outgoing items are eligible.
+        _tick_oldest_pending(self._pending_acks)
 
     @Slot()
     def _on_send(self) -> None:
@@ -280,7 +305,8 @@ class _BroadcastView(QWidget):
         except Exception:
             log.exception("send_text failed")
             return
-        self._append({"ts": int(time.time()), "node_id": "me", "text": text, "is_outgoing": True})
+        item = self._append({"ts": int(time.time()), "node_id": "me", "text": text, "is_outgoing": True})
+        self._pending_acks.append(item)
         self._scroll_bottom()
 
 
@@ -290,6 +316,8 @@ class _DmView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._peer_id: str | None = None
+        # Outgoing items of the open conversation awaiting an ack (oldest first).
+        self._pending_acks: list[QListWidgetItem] = []
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -355,18 +383,28 @@ class _DmView(QWidget):
             log.exception("dm threads reload failed")
             threads = []
 
-        self.threads.clear()
-        for t in threads:
-            label = t.get("short_name") or t.get("peer_id") or "?"
-            unread = t.get("unread") or 0
-            text = f"{label}  ({unread} nuovi)" if unread else label
-            item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, t.get("peer_id"))
-            if unread:
-                f = item.font()
-                f.setBold(True)
-                item.setFont(f)
-            self.threads.addItem(item)
+        # Rebuild the list without clobbering the user's open conversation:
+        # signals are blocked while we restore the selection so the message
+        # pane is not reloaded (and unread state not re-marked) as a side
+        # effect of a background threads refresh.
+        self.threads.blockSignals(True)
+        try:
+            self.threads.clear()
+            for t in threads:
+                label = t.get("short_name") or t.get("peer_id") or "?"
+                unread = t.get("unread") or 0
+                text = f"{label}  ({unread} nuovi)" if unread else label
+                item = QListWidgetItem(text)
+                item.setData(Qt.ItemDataRole.UserRole, t.get("peer_id"))
+                if unread:
+                    f = item.font()
+                    f.setBold(True)
+                    item.setFont(f)
+                self.threads.addItem(item)
+                if self._peer_id and t.get("peer_id") == self._peer_id:
+                    self.threads.setCurrentItem(item)
+        finally:
+            self.threads.blockSignals(False)
 
     @Slot()
     def _on_thread_selected(self) -> None:
@@ -389,7 +427,12 @@ class _DmView(QWidget):
         except Exception:
             log.exception("dm load failed")
             msgs = []
+        # The user may have switched conversation while we awaited the DB —
+        # drop stale results instead of letting the last finisher win.
+        if peer != self._peer_id:
+            return
         self.msgs.clear()
+        self._pending_acks.clear()
         for m in msgs:
             item = QListWidgetItem(format_message(m))
             if m.get("is_outgoing"):
@@ -417,12 +460,44 @@ class _DmView(QWidget):
         except Exception:
             log.exception("send DM failed")
             return
+        # The user may have switched threads mid-await: don't append the echo
+        # to a different conversation's pane.
+        if peer != self._peer_id:
+            return
         msg = {"ts": int(time.time()), "node_id": "me", "text": text, "is_outgoing": True}
         item = QListWidgetItem(format_message(msg))
         f = item.font()
         f.setItalic(True)
         item.setFont(f)
         self.msgs.addItem(item)
+        self._pending_acks.append(item)
+        self.msgs.scrollToItem(self.msgs.item(self.msgs.count() - 1))
+
+    # Slots --------------------------------------------------------------
+
+    def peer_id(self) -> str | None:
+        return self._peer_id
+
+    def has_pending_ack(self) -> bool:
+        return bool(self._pending_acks)
+
+    @Slot(dict)
+    def on_ack(self, event: dict) -> None:
+        _tick_oldest_pending(self._pending_acks)
+
+    def on_incoming(self, peer: str | None, event: dict) -> None:
+        """Live incoming DM: refresh the threads list and, when the open
+        conversation is with that peer, append to the message pane too."""
+        self.reload()
+        if not peer or peer != self._peer_id:
+            return
+        msg = {
+            "ts": event.get("ts") or int(time.time()),
+            "node_id": peer,
+            "text": event.get("text") or "",
+            "is_outgoing": False,
+        }
+        self.msgs.addItem(QListWidgetItem(format_message(msg)))
         self.msgs.scrollToItem(self.msgs.item(self.msgs.count() - 1))
 
 
@@ -452,7 +527,7 @@ class Page(QWidget):
 
         if eventbus is not None:
             eventbus.message_received.connect(self._on_incoming)
-            eventbus.ack_received.connect(self._broadcast.on_ack)
+            eventbus.ack_received.connect(self._on_ack)
 
     @Slot(int)
     def _on_tab_changed(self, idx: int) -> None:
@@ -467,6 +542,21 @@ class Page(QWidget):
         if dest == "^all":
             self._broadcast.on_incoming(event)
         else:
-            # Refresh thread list (unread count changes); the user may also
-            # be viewing the DM tab for this peer.
-            self._dm.reload()
+            # Refresh thread list (unread count changes) and, when the open
+            # conversation is with this peer, append to the message pane.
+            peer = event.get("from") or event.get("id")
+            self._dm.on_incoming(peer, event)
+
+    @Slot(dict)
+    def _on_ack(self, event: dict) -> None:
+        """Route the ack to the right view.
+
+        The ack event only carries the acking node id, so the heuristic is:
+        if the open DM conversation is with that node and has un-acked
+        outgoing items, tick there; otherwise tick the broadcast view.
+        """
+        node_id = event.get("node_id")
+        if node_id and node_id == self._dm.peer_id() and self._dm.has_pending_ack():
+            self._dm.on_ack(event)
+        else:
+            self._broadcast.on_ack(event)

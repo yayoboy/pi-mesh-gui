@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from gui.core.tasks import schedule as _schedule_qt
+from gui.pages._psk import is_valid_psk_b64 as _is_valid_psk_b64
 from gui.pages._psk import random_psk_b64 as _random_psk_b64
 
 log = logging.getLogger(__name__)
@@ -342,10 +343,18 @@ class _ChannelsSection(QGroupBox):
 
         if _show_modal(dlg) != QDialog.DialogCode.Accepted:
             return
+        psk_b64 = psk_edit.text().strip()
+        if not _is_valid_psk_b64(psk_b64):
+            QMessageBox.warning(
+                self, "Canale",
+                "PSK non valida: deve essere base64 di 1, 16 o 32 byte "
+                "(oppure vuota per lasciarla invariata).",
+            )
+            return
         self._on_save_channel(
             index=ch.get("index", 0),
             name=name_edit.text().strip(),
-            psk_b64=psk_edit.text().strip(),
+            psk_b64=psk_b64,
         )
 
 

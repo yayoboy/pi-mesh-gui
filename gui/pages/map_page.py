@@ -174,7 +174,7 @@ class Page(QWidget):
             local = meshtasticd_client.get_local_node()
         except Exception:
             local = None
-        if local and local.get("latitude") is not None:
+        if local and local.get("latitude") is not None and local.get("longitude") is not None:
             self._view.set_center(local["longitude"], local["latitude"])
 
     def _refresh_all(self) -> None:
@@ -240,7 +240,9 @@ class Page(QWidget):
             b = nodes_by_id.get(l.get("neighbor_id"))
             if not a or not b:
                 continue
-            if a.get("latitude") is None or b.get("latitude") is None:
+            if a.get("latitude") is None or a.get("longitude") is None:
+                continue
+            if b.get("latitude") is None or b.get("longitude") is None:
                 continue
             prepared.append((
                 float(a["longitude"]), float(a["latitude"]),
@@ -515,8 +517,13 @@ class Page(QWidget):
             local_id = meshtasticd_client.get_local_id()
         except Exception:
             return
-        dest = event.get("node_id") or event.get("id")
-        hops = event.get("hops") or event.get("route") or []
+        # The backend emits hop ids as "!%08x" strings, but be robust to raw
+        # int node numbers (older payloads) — nodes_by_id is keyed by "!hex".
+        def _as_node_id(v):
+            return f"!{v:08x}" if isinstance(v, int) else v
+
+        dest = _as_node_id(event.get("node_id") or event.get("id"))
+        hops = [_as_node_id(h) for h in (event.get("hops") or event.get("route") or [])]
         path: list[tuple[float, float]] = []
 
         chain = [local_id, *hops, dest] if dest else [local_id, *hops]

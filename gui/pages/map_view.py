@@ -105,10 +105,15 @@ class MapView(QGraphicsView):
         self._marker_items: dict[str, QGraphicsEllipseItem] = {}
         self._label_items: dict[str, QGraphicsTextItem] = {}
         self._marker_is_local: dict[str, bool] = {}     # for live restyle on theme change
+        self._marker_geo: dict[str, tuple[float, float]] = {}      # (lon, lat) per node
         self._traceroute_items: dict[str, QGraphicsPathItem] = {}
+        self._traceroute_points: dict[str, list[tuple[float, float]]] = {}
         self._waypoint_items: dict[int, tuple[QGraphicsEllipseItem, QGraphicsTextItem]] = {}
+        self._waypoint_geo: dict[int, tuple[float, float]] = {}
         self._custom_marker_items: dict[int, tuple[QGraphicsEllipseItem, QGraphicsTextItem]] = {}
+        self._custom_marker_geo: dict[int, tuple[float, float]] = {}
         self._neighbor_items: list[QGraphicsLineItem] = []
+        self._neighbor_links_data: list[tuple[float, float, float, float, float]] = []
         self._center_lon = self.DEFAULT_LON
 
         # Empty-state overlay (no tiles cached → otherwise users see a
@@ -292,8 +297,14 @@ class MapView(QGraphicsView):
     # Markers
 
     def update_marker(self, node_id: str, lon: float, lat: float, *, label: str | None = None,
-                      is_local: bool = False) -> None:
+                      is_local: bool | None = None) -> None:
+        # ``is_local=None`` means "preserve current styling" so position-only
+        # updates (live POSITION_APP events) don't restyle the local node as
+        # remote until the next full refresh.
+        if is_local is None:
+            is_local = self._marker_is_local.get(node_id, False)
         self._marker_is_local[node_id] = is_local
+        self._marker_geo[node_id] = (lon, lat)
         x, y = lonlat_to_pixel(lon, lat, self._zoom)
         radius = 6 if not is_local else 9
         color = QColor(self._colors["marker_local" if is_local else "marker_remote"])
@@ -310,13 +321,14 @@ class MapView(QGraphicsView):
             self._scene.addItem(item)
             self._marker_items[node_id] = item
 
-        text = label or node_id
         if node_id in self._label_items:
             tlbl = self._label_items[node_id]
             tlbl.setPos(x + radius + 2, y - radius - 4)
-            tlbl.setPlainText(text)
+            # ``label=None`` keeps the existing label (position-only update).
+            if label:
+                tlbl.setPlainText(label)
         else:
-            tlbl = QGraphicsTextItem(text)
+            tlbl = QGraphicsTextItem(label or node_id)
             tlbl.setDefaultTextColor(QColor(self._colors["marker_label_text"]))
             tlbl.setPos(x + radius + 2, y - radius - 4)
             tlbl.setZValue(2)
@@ -331,6 +343,7 @@ class MapView(QGraphicsView):
         self._marker_items.clear()
         self._label_items.clear()
         self._marker_is_local.clear()
+        self._marker_geo.clear()
 
     def apply_colors(self, colors: WidgetColors) -> None:
         """Update the active widget-color tokens and re-tint existing items.
@@ -394,14 +407,17 @@ class MapView(QGraphicsView):
         item.setZValue(0.5)  # above tiles, below markers
         self._scene.addItem(item)
         self._traceroute_items[key] = item
+        self._traceroute_points[key] = list(points)
 
     def clear_traceroute(self, key: str | None = None) -> None:
         if key is None:
             for item in self._traceroute_items.values():
                 self._scene.removeItem(item)
             self._traceroute_items.clear()
+            self._traceroute_points.clear()
             return
         item = self._traceroute_items.pop(key, None)
+        self._traceroute_points.pop(key, None)
         if item is not None:
             self._scene.removeItem(item)
 
@@ -428,9 +444,11 @@ class MapView(QGraphicsView):
             label.setPlainText(name)
         label.setPos(x + radius + 2, y - radius - 4)
         self._waypoint_items[wp_id] = (marker, label)
+        self._waypoint_geo[wp_id] = (lon, lat)
 
     def remove_waypoint(self, wp_id: int) -> None:
         items = self._waypoint_items.pop(wp_id, None)
+        self._waypoint_geo.pop(wp_id, None)
         if items is None:
             return
         for it in items:
@@ -441,6 +459,7 @@ class MapView(QGraphicsView):
             for it in items:
                 self._scene.removeItem(it)
         self._waypoint_items.clear()
+        self._waypoint_geo.clear()
 
     # -- custom markers (local DB only) ----------------------------------
 
@@ -466,9 +485,11 @@ class MapView(QGraphicsView):
             text.setPlainText(label)
         text.setPos(x + radius + 2, y - radius - 4)
         self._custom_marker_items[marker_id] = (marker, text)
+        self._custom_marker_geo[marker_id] = (lon, lat)
 
     def remove_custom_marker(self, marker_id: int) -> None:
         items = self._custom_marker_items.pop(marker_id, None)
+        self._custom_marker_geo.pop(marker_id, None)
         if items is None:
             return
         for it in items:
@@ -479,6 +500,7 @@ class MapView(QGraphicsView):
             for it in items:
                 self._scene.removeItem(it)
         self._custom_marker_items.clear()
+        self._custom_marker_geo.clear()
 
     # -- neighbor links (SNR-coloured straight lines) --------------------
 
@@ -488,6 +510,7 @@ class MapView(QGraphicsView):
         for item in self._neighbor_items:
             self._scene.removeItem(item)
         self._neighbor_items.clear()
+        self._neighbor_links_data = list(links)
         for a_lon, a_lat, b_lon, b_lat, snr in links:
             x1, y1 = lonlat_to_pixel(a_lon, a_lat, self._zoom)
             x2, y2 = lonlat_to_pixel(b_lon, b_lat, self._zoom)
@@ -505,10 +528,70 @@ class MapView(QGraphicsView):
             self._neighbor_items.append(line)
 
     def _reposition_markers(self) -> None:
-        # When zoom changes, redraw markers at their new pixel coords.
-        # Marker state is kept on instance so we can rebuild from cache:
-        # for now, callers (the page) re-issue update_marker for every node.
-        pass
+        """Re-project every overlay at the current zoom.
+
+        Scene coordinates are absolute Web-Mercator pixels *at one zoom
+        level*, so after :meth:`set_zoom` every item must be moved to its
+        new pixel position. Geo coordinates are cached alongside each item
+        (``*_geo`` / ``_traceroute_points`` / ``_neighbor_links_data``) so
+        we can re-project without waiting for callers to re-issue updates.
+        """
+        zoom = self._zoom
+
+        # Node markers + labels.
+        for node_id, (lon, lat) in self._marker_geo.items():
+            item = self._marker_items.get(node_id)
+            if item is None:
+                continue
+            x, y = lonlat_to_pixel(lon, lat, zoom)
+            radius = 9 if self._marker_is_local.get(node_id, False) else 6
+            item.setRect(x - radius, y - radius, radius * 2, radius * 2)
+            tlbl = self._label_items.get(node_id)
+            if tlbl is not None:
+                tlbl.setPos(x + radius + 2, y - radius - 4)
+
+        # Waypoints.
+        for wp_id, (lon, lat) in self._waypoint_geo.items():
+            items = self._waypoint_items.get(wp_id)
+            if items is None:
+                continue
+            marker, label = items
+            x, y = lonlat_to_pixel(lon, lat, zoom)
+            radius = 5
+            marker.setRect(x - radius, y - radius, radius * 2, radius * 2)
+            label.setPos(x + radius + 2, y - radius - 4)
+
+        # Custom markers.
+        for mid, (lon, lat) in self._custom_marker_geo.items():
+            items = self._custom_marker_items.get(mid)
+            if items is None:
+                continue
+            marker, text = items
+            x, y = lonlat_to_pixel(lon, lat, zoom)
+            radius = 5
+            marker.setRect(x - radius, y - radius, radius * 2, radius * 2)
+            text.setPos(x + radius + 2, y - radius - 4)
+
+        # Traceroute polylines: rebuild each path from its cached points.
+        for key, points in self._traceroute_points.items():
+            item = self._traceroute_items.get(key)
+            if item is None or len(points) < 2:
+                continue
+            path = QPainterPath()
+            x, y = lonlat_to_pixel(points[0][0], points[0][1], zoom)
+            path.moveTo(x, y)
+            for lon, lat in points[1:]:
+                x, y = lonlat_to_pixel(lon, lat, zoom)
+                path.lineTo(x, y)
+            item.setPath(path)
+
+        # Neighbor links: re-project each cached (a, b) endpoint pair.
+        for line, (a_lon, a_lat, b_lon, b_lat, _snr) in zip(
+            self._neighbor_items, self._neighbor_links_data
+        ):
+            x1, y1 = lonlat_to_pixel(a_lon, a_lat, zoom)
+            x2, y2 = lonlat_to_pixel(b_lon, b_lat, zoom)
+            line.setLine(x1, y1, x2, y2)
 
     # ------------------------------------------------------------------
     # Wheel zoom

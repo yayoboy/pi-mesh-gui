@@ -12,11 +12,17 @@ def random_psk_b64() -> str:
 
 
 def is_valid_psk_b64(s: str) -> bool:
-    """Quick sanity check for a PSK string supplied by the user."""
+    """Quick sanity check for a PSK string supplied by the user.
+
+    Meshtastic legal PSK lengths:
+    - 1 byte  — preset key selector (0 = unencrypted, 1 = default, 2-10 = simple variants)
+    - 16 bytes — AES-128
+    - 32 bytes — AES-256
+    """
     if not s:
         return True  # empty is allowed (default channel)
     try:
         raw = base64.b64decode(s, validate=True)
     except (ValueError, base64.binascii.Error):
         return False
-    return len(raw) in (16, 32)  # AES-128 or AES-256
+    return len(raw) in (1, 16, 32)

@@ -35,6 +35,11 @@ from gui.core.tasks import schedule as _schedule
 log = logging.getLogger(__name__)
 
 
+# Tile root the map actually reads (see gui/pages/map_view.py TILES_BASE and
+# scripts/download_tiles.py). USB move/restore/symlink must target this path.
+_TILES_DIR = "static/tiles"
+
+
 # ---------------------------------------------------------------------------
 # I2C scan
 # ---------------------------------------------------------------------------
@@ -377,8 +382,9 @@ class _MapConfigSection(QGroupBox):
             d, lora = {}, {}
         self._local_tiles.setChecked(bool(d.get("local_tiles")))
         self._region.setText(str(lora.get("region") or "—"))
-        # Tiles present: any png under data/tiles/osm/.
-        tiles_dir = Path("data/tiles/osm")
+        # Tiles present: any png under static/tiles/osm/ — the directory the
+        # map actually reads (map_view.TILES_BASE / scripts/download_tiles.py).
+        tiles_dir = Path("static/tiles/osm")
         try:
             present = tiles_dir.exists() and any(tiles_dir.rglob("*.png"))
         except Exception:
@@ -435,7 +441,7 @@ class _UsbStorageSection(QGroupBox):
             loop = _aio.get_running_loop()
             d = await loop.run_in_executor(None, usb_storage.get_usb_status)
             tiles_loc = await loop.run_in_executor(
-                None, usb_storage.get_tiles_location, "data/tiles",
+                None, usb_storage.get_tiles_location, _TILES_DIR,
             )
         except Exception:
             self._status.setText("status unavailable")
@@ -468,7 +474,7 @@ class _UsbStorageSection(QGroupBox):
             import usb_storage
             loop = _aio.get_running_loop()
             fn = usb_storage.move_tiles_to_usb if action == "move" else usb_storage.restore_tiles_to_sd
-            res = await loop.run_in_executor(None, fn, "data/tiles")
+            res = await loop.run_in_executor(None, fn, _TILES_DIR)
             if not res.get("ok"):
                 QMessageBox.warning(self, "USB", f"{action} failed: {res.get('error', '?')}")
                 return
