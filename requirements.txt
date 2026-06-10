@@ -1,4 +1,25 @@
-# GUI dependencies. Installed via pip on x86_64 / Pi 4 with recent glibc;
-# fall back to apt python3-pyside6.* on ARM where wheels are unavailable
-# (see setup.sh `install_gui_deps`).
-PySide6-Essentials>=6.7
+# Core runtime dependencies for pi-Mesh.
+# GUI dependencies (PySide6) live in requirements-gui.txt and are installed
+# separately by setup.sh `install_gui_deps` (pip with apt fallback on ARM).
+
+# Meshtastic Python API — serial interface + protobufs (meshtasticd_client.py).
+# Also pulls in pypubsub, protobuf, pyserial.
+meshtastic>=2.3
+
+# Pub/sub event callbacks from the meshtastic interface (meshtasticd_client.py
+# imports `pubsub` directly; listed explicitly even though meshtastic depends on it).
+pypubsub>=4.0
+
+# Async SQLite persistence (database.py).
+aiosqlite>=0.19
+
+# Qt + asyncio event loop integration (gui/app.py).
+qasync>=0.27
+
+# MQTT bridge (mqtt_bridge.py). Code uses CallbackAPIVersion.VERSION2 → paho 2.x.
+# Optional at runtime: the bridge disables itself if the import fails.
+paho-mqtt>=2.0
+
+# GPIO test pulses (hardware_ops.py, lazy import — degrades gracefully).
+# Only useful on a Raspberry Pi; harmless to install elsewhere.
+gpiozero>=2.0

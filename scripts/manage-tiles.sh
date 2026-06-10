@@ -73,7 +73,9 @@ LAYER_URLS=(
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
 )
 
-_lon2x() { echo "scale=0; (($1 + 180) / 360 * 2^$2) / 1" | bc; }
+# Multiply before dividing: with bc's default scale=0 the division truncates,
+# so ((lon+180)/360)*2^z would always be 0. (lon+180)*2^z/360 truncates last.
+_lon2x() { echo "(($1 + 180) * 2^$2) / 360" | bc; }
 _lat2y() {
   python3 -c "
 import math, sys

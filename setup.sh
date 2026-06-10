@@ -86,9 +86,16 @@ echo "==> Installing systemd services..."
 cp "$REPO_DIR/systemd/meshtasticd.service" /etc/systemd/system/
 cp "$REPO_DIR/systemd/pimesh-gui.service"  /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable meshtasticd pimesh-gui
-systemctl start  meshtasticd
-sleep 3
+# Only enable meshtasticd if the daemon binary is actually installed —
+# otherwise the unit would just sit in a restart/condition-failed state.
+if [ -x /usr/sbin/meshtasticd ]; then
+    systemctl enable meshtasticd
+    systemctl start  meshtasticd
+    sleep 3
+else
+    echo "    /usr/sbin/meshtasticd not installed — skipping meshtasticd service."
+fi
+systemctl enable pimesh-gui
 systemctl start  pimesh-gui
 
 echo

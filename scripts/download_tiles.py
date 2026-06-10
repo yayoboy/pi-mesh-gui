@@ -74,6 +74,8 @@ def _build_tile_list(name):
                 path = os.path.join(base_dir, str(z), str(x), f"{y}.png")
                 if os.path.isfile(path) and os.path.getsize(path) > 0:
                     continue  # already downloaded
+                if os.path.isfile(path + ".404"):
+                    continue  # known-missing tile (server returned 404)
                 tiles.append((z, x, y, path))
     return tiles
 
@@ -91,7 +93,11 @@ def _fetch_tile(url_tpl, headers, delay, z, x, y, path):
         return "ok"
     except urllib.error.HTTPError as e:
         if e.code == 404:
-            open(path, "wb").close()  # empty placeholder
+            # Marker file so the next run skips this tile. Never write an
+            # empty .png: the map would serve it as a broken tile.
+            if os.path.isfile(path):
+                os.remove(path)  # drop stale 0-byte placeholder, if any
+            open(path + ".404", "wb").close()
             return "404"
         time.sleep(delay)
         return f"err:{e.code}"

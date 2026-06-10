@@ -72,13 +72,11 @@ echo ""
 echo "▶ [4/4] Configuro hwclock-set..."
 HWCLOCK_SET="/lib/udev/hwclock-set"
 if [[ -f "$HWCLOCK_SET" ]]; then
-  # Commenta le righe che saltano hwclock su sistemi senza RTC onboard
+  # Commenta SOLO il blocco "if [ -e /run/systemd/system ] ... fi" che salta
+  # hwclock sui sistemi systemd. Il sed è limitato al range tra la riga "if"
+  # e il primo "fi" corrispondente, per non toccare gli altri if/fi del file.
   if grep -q "^if \[ -e /run/systemd" "$HWCLOCK_SET"; then
-    sed -i \
-      -e 's|^if \[ -e /run/systemd|#if [ -e /run/systemd|' \
-      -e 's|^    exit 0|#    exit 0|' \
-      -e 's|^fi$|#fi|' \
-      "$HWCLOCK_SET"
+    sed -i '/^if \[ -e \/run\/systemd/,/^fi$/ s/^/#/' "$HWCLOCK_SET"
     ok "hwclock-set configurato"
   else
     skip "hwclock-set già configurato"

@@ -3,6 +3,10 @@ Description=pi-Mesh native Qt GUI (framebuffer kiosk)
 After=network.target meshtasticd.service
 Wants=meshtasticd.service
 Conflicts=kiosk.service
+# Limit restart storms: max 5 restarts in 60s, then enter failed state.
+# (These are [Unit] directives — systemd ignores them inside [Service].)
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 User=root
@@ -22,15 +26,15 @@ Environment=QT_QPA_GENERIC_PLUGINS=libinput
 Environment=HOME=/home/pimesh
 Environment=PIMESH_GUI_EMBEDDED_UVICORN=0
 ExecStartPre=/bin/sleep 3
-ExecStart=/usr/bin/python3 -m gui
+# Venv-aware launcher: picks venv/bin/python if present, sources config.env.
+# The script cd's to the repo root itself (derived from its own path), so it
+# is independent of WorkingDirectory.
+ExecStart=/home/pimesh/pi-mesh-gui/scripts/start-gui.sh
 Restart=always
 RestartSec=5
 # Cap memory: Pi has 1-4GB, 256M is generous for a Qt kiosk; catches leaks early.
 MemoryMax=256M
 OOMPolicy=kill
-# Limit restart storms: max 5 restarts in 60s, then enter failed state.
-StartLimitIntervalSec=60
-StartLimitBurst=5
 StandardOutput=journal
 StandardError=journal
 

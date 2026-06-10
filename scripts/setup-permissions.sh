@@ -50,8 +50,12 @@ $PIMESH_USER ALL=(root) NOPASSWD: /usr/bin/tee /sys/class/backlight/*/brightness
 $PIMESH_USER ALL=(root) NOPASSWD: /usr/bin/tee /boot/firmware/config.txt
 $PIMESH_USER ALL=(root) NOPASSWD: /usr/bin/tee /boot/config.txt
 $PIMESH_USER ALL=(root) NOPASSWD: /usr/sbin/hwclock --show --utc
-$PIMESH_USER ALL=(root) NOPASSWD: /usr/bin/mount -o rw,noexec,nodev,nosuid * *
-$PIMESH_USER ALL=(root) NOPASSWD: /usr/bin/umount *
+# USB auto-mount (usb_storage.py): source restricted to USB block devices,
+# target to the /media prefix with a leading safe character so the kiosk user
+# cannot mount over arbitrary paths (in sudoers a bare * crosses whitespace).
+$PIMESH_USER ALL=(root) NOPASSWD: /usr/bin/mount -o rw\,noexec\,nodev\,nosuid /dev/sd[a-z] /media/[a-zA-Z0-9_-]*
+$PIMESH_USER ALL=(root) NOPASSWD: /usr/bin/mount -o rw\,noexec\,nodev\,nosuid /dev/sd[a-z][0-9] /media/[a-zA-Z0-9_-]*
+$PIMESH_USER ALL=(root) NOPASSWD: /usr/bin/umount /media/[a-zA-Z0-9_-]*
 EOF
 chmod 0440 "$SUDOERS_PATH"
 

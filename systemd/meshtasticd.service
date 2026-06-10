@@ -2,10 +2,14 @@
 Description=Meshtastic Daemon
 After=network.target
 Wants=network.target
+# Skip (without failing/restart-looping) when the daemon is not installed.
+ConditionPathExists=/usr/sbin/meshtasticd
 
 [Service]
 Type=simple
-ExecStart=/usr/sbin/meshtasticd --port /dev/ttyACM0
+# Hardware devices are configured in /etc/meshtasticd/config.yaml;
+# -p/--port is the TCP API port, NOT a serial device path.
+ExecStart=/usr/sbin/meshtasticd
 Restart=always
 RestartSec=5
 StandardOutput=journal
