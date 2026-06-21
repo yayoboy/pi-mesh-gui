@@ -15,6 +15,11 @@ Environment=QT_QPA_PLATFORM=linuxfb:fb=/dev/fb1
 # classifies the device correctly as a touchscreen and supplies its
 # own coordinate transform.
 Environment=QT_QPA_GENERIC_PLUGINS=libinput
+# Disable linuxfb's built-in evdev input handlers. Otherwise a USB keyboard
+# is read twice — once by linuxfb's auto evdevkeyboard and once by the
+# libinput plugin above — so every keypress produced two characters. With
+# this set, libinput is the sole input source for touch AND keyboard.
+Environment=QT_QPA_FB_DISABLE_INPUT=1
 # DO NOT set QT_QPA_FB_HIDECURSOR. Per Qt 6 docs, linuxfb checks the
 # *presence* of the variable (not its value), so even
 # QT_QPA_FB_HIDECURSOR=0 hides the cursor. The variable must be unset

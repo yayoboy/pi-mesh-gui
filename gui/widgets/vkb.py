@@ -203,6 +203,29 @@ class VirtualKeyboard(QFrame):
 
 
 # ---------------------------------------------------------------------------
+# Physical-keyboard detection
+# ---------------------------------------------------------------------------
+
+def external_keyboard_present() -> bool:
+    """True when a physical keyboard is attached.
+
+    udev names a keyboard's event node ``*-event-kbd`` (it only tags a device
+    as a keyboard when it exposes the alphabetic key block), so this matches a
+    real USB keyboard but NOT the rotary encoder / gpio-keys, which expose only
+    a couple of keys and get no ``-kbd`` symlink. When one is present the
+    on-screen keyboard is suppressed — the user types on the real one.
+    """
+    import glob
+    try:
+        return bool(
+            glob.glob("/dev/input/by-id/*-event-kbd")
+            or glob.glob("/dev/input/by-path/*usb*-event-kbd")
+        )
+    except OSError:
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Auto-attach helper
 # ---------------------------------------------------------------------------
 
@@ -285,7 +308,8 @@ class VkbController(QObject):
             self._block.setEnabled(not blocked)
 
     def _on_focus_changed(self, old: QWidget | None, new: QWidget | None) -> None:
-        if isinstance(new, (QLineEdit, QPlainTextEdit, QTextEdit)):
+        if (isinstance(new, (QLineEdit, QPlainTextEdit, QTextEdit))
+                and not external_keyboard_present()):
             self._target = new
             self._reposition()
             self._kbd.show()
