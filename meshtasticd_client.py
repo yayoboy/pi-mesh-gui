@@ -1333,6 +1333,63 @@ async def _command_worker() -> None:
             _command_queue.task_done()
 
 
+def _set_local_id_from_interface() -> str:
+    """Derive and cache the local node id from the live interface.
+
+    Returns the id (``'!xxxxxxxx'``) or the unchanged value if it can't be
+    read. Called from both the keep-alive loop and the connection.established
+    callback so the displayed identity always tracks the attached board rather
+    than latching whatever was present at first boot.
+    """
+    global _local_id
+    iface = _interface
+    if iface is None:
+        return _local_id
+    num = None
+    try:
+        num = iface.localNode.nodeNum
+    except Exception:
+        try:
+            num = iface.myInfo.my_node_num
+        except Exception:
+            num = None
+    if num:
+        new_id = f'!{num:08x}'
+        if new_id != _local_id:
+            _local_id = new_id
+            logger.warning(f'Local node ID: {_local_id}')
+    return _local_id
+
+
+def _announce_local_node() -> None:
+    """Refresh the cache and push a node event so the GUI header updates at
+    once, instead of waiting up to 30s for the next poll. Runs on the loop."""
+    _refresh_node_cache()
+    local = get_local_node()
+    if local is not None:
+        _enqueue_event({'type': 'node', **local})
+
+
+def _on_connection_established(interface=None, **kwargs) -> None:
+    """meshtastic pubsub callback (reader thread): link is up. Re-derive the
+    local identity and refresh the UI immediately."""
+    global _interface, _connected
+    if interface is not None:
+        _interface = interface
+    _connected = True
+    _set_local_id_from_interface()
+    if _loop is not None:
+        _loop.call_soon_threadsafe(_announce_local_node)
+
+
+def _on_connection_lost(interface=None, **kwargs) -> None:
+    """meshtastic pubsub callback (reader thread): link dropped. Flip the flag
+    so the keep-alive loop tears down and reconnects to whatever is attached."""
+    global _connected
+    _connected = False
+    logger.warning('Board connection lost')
+
+
 async def connect() -> None:
     global _interface, _connected, _is_connecting, _local_id, _loop
     if _is_connecting:
@@ -1357,6 +1414,11 @@ async def connect() -> None:
     _flush_worker_task.add_done_callback(_log_task_done)
     backoff = 15
     pub.subscribe(_on_receive, 'meshtastic.receive')
+    # Re-derive the local identity every time the link is (re)established and
+    # force a reconnect when it drops, so the displayed node tracks the board
+    # actually attached instead of latching whatever was present at boot.
+    pub.subscribe(_on_connection_established, 'meshtastic.connection.established')
+    pub.subscribe(_on_connection_lost, 'meshtastic.connection.lost')
     while True:
         try:
             logger.warning(f'Connecting to board at {cfg.SERIAL_PATH}')
@@ -1364,19 +1426,29 @@ async def connect() -> None:
             _connected = True
             backoff = 15
             logger.warning(f'Connected to board at {cfg.SERIAL_PATH}')
-            # Wait for myInfo to be populated before reading local ID
+            # connection.established normally sets the local id; derive it here
+            # too as a fallback in case that event was missed.
             await asyncio.sleep(3)
-            _local_id = f'!{_interface.localNode.nodeNum:08x}'
-            logger.warning(f'Local node ID: {_local_id}')
-            # Keep alive — poll every 30s
+            if not _local_id:
+                _set_local_id_from_interface()
+            # Keep alive — poll every 30s. _on_connection_lost flips _connected.
             while _connected:
                 _refresh_node_cache()
                 await asyncio.sleep(30)
+            logger.warning('Board connection lost; reconnecting')
         except Exception as e:
-            _connected = False
             logger.warning(f'Board connection failed: {e}. Retry in {backoff}s')
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 120)
+        finally:
+            _connected = False
+            _local_id = ''  # force re-detection on the next attached board
+            if _interface is not None:
+                try:
+                    _interface.close()
+                except Exception:
+                    pass
+                _interface = None
 
 
 async def disconnect() -> None:

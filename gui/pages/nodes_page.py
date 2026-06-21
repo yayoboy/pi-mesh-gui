@@ -118,6 +118,10 @@ class Page(QWidget):
         self._search = QLineEdit(self)
         self._search.setPlaceholderText("filtra nodi…")
         self._search.setClearButtonEnabled(True)
+        # ClickFocus (not the default StrongFocus) so the field is not given
+        # focus automatically when the page is shown — otherwise the on-screen
+        # keyboard pops up unbidden on the kiosk. It still focuses on a tap.
+        self._search.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self._search.textChanged.connect(self._on_filter)
         head.addWidget(self._count)
         head.addWidget(self._search, 1)

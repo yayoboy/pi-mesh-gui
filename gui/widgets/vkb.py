@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt, Signal
 from PySide6.QtGui import QFocusEvent, QKeyEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -213,16 +213,22 @@ class VkbController(QObject):
         self._kbd.hide()
         # Position at the bottom of the host; resizes track the host.
         self._reposition()
-        host.installEventFilter(self)
         self._kbd.key_pressed.connect(self._on_char)
         self._kbd.backspace.connect(self._on_backspace)
         self._kbd.done.connect(self.hide_keyboard)
 
-        # Listen to focusChanged on the QApplication.
+        # Application-wide filter: focus changes drive show/hide, and a press
+        # anywhere outside the keyboard (and outside any text field) dismisses
+        # it. On a touch-only kiosk this is the only reliable way to close the
+        # keyboard — tapping a non-focusable widget never clears focus by
+        # itself, which is why it used to get stuck open.
         from PySide6.QtWidgets import QApplication
         app = QApplication.instance()
         if app is not None:
             app.focusChanged.connect(self._on_focus_changed)
+            app.installEventFilter(self)
+        else:
+            host.installEventFilter(self)
 
     # ------------------------------------------------------------------
 
@@ -234,9 +240,28 @@ class VkbController(QObject):
         self._kbd.raise_()
 
     def eventFilter(self, obj, event):
-        if obj is self._host and event.type() == QEvent.Type.Resize:
+        et = event.type()
+        if et == QEvent.Type.Resize and obj is self._host:
             self._reposition()
+        elif et == QEvent.Type.MouseButtonPress and self._kbd.isVisible():
+            self._maybe_dismiss(event)
         return super().eventFilter(obj, event)
+
+    def _maybe_dismiss(self, event) -> None:
+        """Hide the keyboard when the user taps outside it and outside any text
+        field. Never consumes the event, so the tap still reaches its widget."""
+        from PySide6.QtWidgets import QApplication
+
+        gp = event.globalPosition().toPoint()
+        kbd_rect = QRect(self._kbd.mapToGlobal(QPoint(0, 0)), self._kbd.size())
+        if kbd_rect.contains(gp):
+            return
+        w = QApplication.widgetAt(gp)
+        if isinstance(w, (QLineEdit, QPlainTextEdit, QTextEdit)):
+            return  # tapping another field: keep the keyboard up for it
+        if self._target is not None:
+            self._target.clearFocus()
+        self.hide_keyboard()
 
     def _on_focus_changed(self, old: QWidget | None, new: QWidget | None) -> None:
         if isinstance(new, (QLineEdit, QPlainTextEdit, QTextEdit)):
