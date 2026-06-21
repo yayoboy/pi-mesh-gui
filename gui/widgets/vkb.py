@@ -170,6 +170,15 @@ class VirtualKeyboard(QFrame):
 
         self._rows_layout.addWidget(bottom)
 
+        # Keys must NOT take focus. If a key grabbed focus on tap, the
+        # QApplication focusChanged signal would fire and hide the keyboard
+        # mid-press — and the now-uncovered widget behind the key (the ✓ sits
+        # right over the bottom tab bar) would receive the release and trigger,
+        # e.g. switching to the Log tab. Keys drive the target field through
+        # the controller's signals, never through focus, so NoFocus is correct.
+        for btn in self.findChildren(QPushButton):
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
     # ------------------------------------------------------------------
     # Slots
 
