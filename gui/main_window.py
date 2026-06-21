@@ -391,6 +391,11 @@ class MainWindow(QMainWindow):
             from gui.widgets.vkb import VkbController
             self._vkb_controller = VkbController(self)
 
+        # Arrow / page keys (and the rotary encoder mapped to them) scroll the
+        # visible page, mirroring mouse-wheel scrolling on the kiosk.
+        from gui.widgets.key_scroll import KeyScrollController
+        self._key_scroll = KeyScrollController(self._stack, parent=self)
+
         # Toast host so any descendant can call show_toast(self, …).
         from gui.widgets.toast import ToastHost
         ToastHost.for_window(self)
