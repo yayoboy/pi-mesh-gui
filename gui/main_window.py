@@ -411,7 +411,10 @@ class MainWindow(QMainWindow):
         import os
         if os.environ.get("PIMESH_GUI_NO_VKB", "0") != "1":
             from gui.widgets.vkb import VkbController
-            self._vkb_controller = VkbController(self)
+            # Pass the tab bar so it is disabled while the keyboard is up — it
+            # sits behind the keyboard, and a tap on the ✓ / dismiss used to
+            # leak through and switch to the Log tab underneath.
+            self._vkb_controller = VkbController(self, block_widget=self._tabs)
 
         # Arrow / page keys (and the rotary encoder mapped to them) scroll the
         # visible page, mirroring mouse-wheel scrolling on the kiosk.

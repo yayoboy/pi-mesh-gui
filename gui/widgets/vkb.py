@@ -204,10 +204,14 @@ class VkbController(QObject):
         controller = VkbController(main_window)
     """
 
-    def __init__(self, host: QWidget):
+    def __init__(self, host: QWidget, block_widget: QWidget | None = None):
         super().__init__(host)
         self._host = host
         self._target: QWidget | None = None
+        # Disabled while the keyboard is shown so a tap that lands on / leaks
+        # through to it (e.g. the bottom tab bar sitting behind the keyboard)
+        # can't be triggered by accident — typically passed the tab bar.
+        self._block = block_widget
 
         self._kbd = VirtualKeyboard(parent=host)
         self._kbd.hide()
@@ -244,30 +248,39 @@ class VkbController(QObject):
         if et == QEvent.Type.Resize and obj is self._host:
             self._reposition()
         elif et == QEvent.Type.MouseButtonPress and self._kbd.isVisible():
-            self._maybe_dismiss(event)
+            if self._maybe_dismiss(event):
+                # Swallow the dismissing tap so it doesn't also activate
+                # whatever sits behind the keyboard.
+                return True
         return super().eventFilter(obj, event)
 
-    def _maybe_dismiss(self, event) -> None:
+    def _maybe_dismiss(self, event) -> bool:
         """Hide the keyboard when the user taps outside it and outside any text
-        field. Never consumes the event, so the tap still reaches its widget."""
+        field. Returns True when it dismissed (the caller consumes the tap)."""
         from PySide6.QtWidgets import QApplication
 
         gp = event.globalPosition().toPoint()
         kbd_rect = QRect(self._kbd.mapToGlobal(QPoint(0, 0)), self._kbd.size())
         if kbd_rect.contains(gp):
-            return
+            return False
         w = QApplication.widgetAt(gp)
         if isinstance(w, (QLineEdit, QPlainTextEdit, QTextEdit)):
-            return  # tapping another field: keep the keyboard up for it
+            return False  # tapping another field: keep the keyboard up for it
         if self._target is not None:
             self._target.clearFocus()
         self.hide_keyboard()
+        return True
+
+    def _set_block(self, blocked: bool) -> None:
+        if self._block is not None:
+            self._block.setEnabled(not blocked)
 
     def _on_focus_changed(self, old: QWidget | None, new: QWidget | None) -> None:
         if isinstance(new, (QLineEdit, QPlainTextEdit, QTextEdit)):
             self._target = new
             self._reposition()
             self._kbd.show()
+            self._set_block(True)
         else:
             # Hide only if focus left a text widget (clicking on the VKB
             # itself transfers focus to a button, but the buttons have
@@ -277,6 +290,7 @@ class VkbController(QObject):
     def hide_keyboard(self) -> None:
         self._target = None
         self._kbd.hide()
+        self._set_block(False)
 
     # ------------------------------------------------------------------
 
