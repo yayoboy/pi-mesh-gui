@@ -23,8 +23,9 @@ touch-friendly kiosk app that talks to the radio over USB.
 - **Native Qt6 widgets** — runs on the Pi linuxfb stack without an X
   server, an SDL layer, or a browser engine. Cold-start to first paint
   in under 4 s on a Pi 3 A+.
-- **Touch-first UI** — 44 px tap targets, virtual keyboard, four built-in
-  themes (dark / light / high-contrast / custom).
+- **Touch-first UI** — 44 px tap targets, on-screen keyboard, four built-in
+  themes (dark / light / high-contrast / custom). Scrolls with the mouse
+  wheel or the arrow / page keys (e.g. a rotary encoder mapped to them).
 - **Single-process backend** — direct `meshtastic.SerialInterface` over
   USB, SQLite via `aiosqlite`, optional MQTT bridge, optional bots
   framework. No HTTP daemon to babysit.
@@ -54,6 +55,17 @@ The kiosk runs at 320×480 (portrait) or 480×320 (landscape) on a Waveshare
 ---
 
 ## Features
+
+### Input & navigation
+- Tap to select; the bottom tab bar switches pages.
+- **Scrolling**: the mouse wheel, or the **arrow keys** and **PageUp /
+  PageDown / Home / End**, scroll the page currently on screen — convenient
+  for a rotary encoder mapped to Up / Down. Text fields and value controls
+  (combo box, spin box, slider) keep their native arrow behaviour, and item
+  lists keep native arrow navigation.
+- **On-screen keyboard**: appears when you tap a text field; dismiss it by
+  tapping outside it or pressing the ✓ key. Set `PIMESH_GUI_NO_VKB=1` to
+  disable it (useful on a desktop dev box).
 
 ### Nodes
 - Real-time list of every mesh node — short name, hops, SNR, battery,
@@ -118,7 +130,7 @@ The kiosk runs at 320×480 (portrait) or 480×320 (landscape) on a Waveshare
 | Raspberry Pi 3 A+ or newer | Tested down to 512 MB RAM (Pi 3 A+); Bookworm armhf or arm64. |
 | Meshtastic radio | USB-connected ESP32 boards: Heltec V3/V4, T-Beam, RAK WisBlock, LilyGo, etc. No `meshtasticd` daemon required. |
 | 3.5" 320×480 SPI TFT | MPI3501 / Waveshare 3.5" / compatible. Portrait and landscape both supported and auto-detected from the running rotation. |
-| Optional | RTC (DS3231 over I²C), USB storage for tile import, GPIO sensors. |
+| Optional | RTC (DS3231 over I²C), USB storage for tile import, GPIO sensors, rotary encoder (map it to Up / Down keys for scrolling). |
 
 ---
 
