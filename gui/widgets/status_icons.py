@@ -7,11 +7,51 @@ deliberately monochromatic and matches the SVG paths in templates/base.html.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import QWidget
 
 from gui.theme.colors import get_widget_colors
+
+
+# ---------------------------------------------------------------------------
+# Pure state helpers (no Qt) — unit-testable in isolation.
+# ---------------------------------------------------------------------------
+
+# vcgencmd get_throttled bitmask groups.
+_THROTTLE_NOW_MASK = 0x1 | 0x2 | 0x4 | 0x8                    # active now (bits 0-3)
+_THROTTLE_PAST_MASK = 0x10000 | 0x20000 | 0x40000 | 0x80000  # occurred since boot (bits 16-19)
+
+
+def power_state(throttled: int | None) -> str:
+    """Map a ``vcgencmd get_throttled`` bitmask to a status string.
+
+    ``unknown`` when there's no reading (e.g. no vcgencmd off-Pi), ``alert``
+    while under-voltage / throttling is active, ``warn`` if it occurred since
+    boot, ``ok`` otherwise.
+    """
+    if throttled is None:
+        return "unknown"
+    if throttled & _THROTTLE_NOW_MASK:
+        return "alert"
+    if throttled & _THROTTLE_PAST_MASK:
+        return "warn"
+    return "ok"
+
+
+def gps_state(has_fix: bool, sats: int | None) -> str:
+    """Map GPS fix + satellite count to ``none`` / ``weak`` / ``good``.
+
+    With a fix but an unknown satellite count we report ``good`` — we still
+    have a position to show; we just can't grade its quality.
+    """
+    if not has_fix:
+        return "none"
+    if sats is None:
+        return "good"
+    if sats < 4:
+        return "weak"
+    return "good"
 
 
 def _active_colors() -> dict:
@@ -160,6 +200,23 @@ class GpsIcon(_IconBase):
         self._color = QColor("#4caf50") if has_fix else QColor("#9aa")
         self.update()
 
+    _GPS_COLORS = {"none": "#9aa", "weak": "#ff9800", "good": "#4caf50"}
+
+    def set_gps(self, has_fix: bool, sats: int | None = None) -> None:
+        """Colour by fix + satellite quality: grey (no fix), orange (weak),
+        green (good). Tooltip shows the satellite count when known."""
+        state = gps_state(has_fix, sats)
+        self._has_fix = bool(has_fix)
+        self._color = QColor(self._GPS_COLORS[state])
+        if not has_fix:
+            tip = "GPS — nessun fix"
+        elif sats is None:
+            tip = "GPS — fix attivo"
+        else:
+            tip = f"GPS — {sats} satelliti"
+        self.set_tooltip(tip)
+        self.update()
+
     def _draw(self, p: QPainter) -> None:
         pen = QPen(self._color, 1.2)
         p.setPen(pen)
@@ -209,6 +266,62 @@ class ConnIcon(_IconBase):
         else:
             p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(2, 2, 10, 10)
+
+
+class _ActivityArrow(_IconBase):
+    """Base for the TX / RX activity arrows. ``pulse()`` flashes an accent
+    colour for ~300 ms, then fades back to a dim idle grey. This indicates
+    packet activity only — the radio does not expose real-time PA state."""
+
+    _IDLE = "#5a5a6e"
+    _ACTIVE = "#4caf50"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._color = QColor(self._IDLE)
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(300)
+        self._timer.timeout.connect(self._fade)
+
+    def pulse(self, *_args) -> None:
+        self._color = QColor(self._ACTIVE)
+        self.update()
+        self._timer.start()
+
+    def _fade(self) -> None:
+        self._color = QColor(self._IDLE)
+        self.update()
+
+
+class RxIcon(_ActivityArrow):
+    """Down arrow — flashes green on an incoming packet."""
+
+    _ACTIVE = "#4caf50"
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.6)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.drawLine(QPointF(7, 2), QPointF(7, 9.5))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        p.drawPolygon(QPolygonF([QPointF(3.5, 8), QPointF(10.5, 8), QPointF(7, 12.5)]))
+
+
+class TxIcon(_ActivityArrow):
+    """Up arrow — flashes blue on an outgoing packet."""
+
+    _ACTIVE = "#4a9eff"
+
+    def _draw(self, p: QPainter) -> None:
+        pen = QPen(self._color, 1.6)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.drawLine(QPointF(7, 12), QPointF(7, 4.5))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(self._color))
+        p.drawPolygon(QPolygonF([QPointF(3.5, 6), QPointF(10.5, 6), QPointF(7, 1.5)]))
 
 
 # ---------------------------------------------------------------------------
@@ -507,6 +620,21 @@ class HexIcon(_IconBase):
 class BoltIcon(_IconBase):
     """Lightning bolt for voltage / power. Replaces the emoji ⚡, which has
     no glyph in the kiosk font and renders as .notdef tofu."""
+
+    _POWER_COLORS = {"ok": "#4caf50", "warn": "#ff9800", "alert": "#f44336", "unknown": "#9aa"}
+    _POWER_TIPS = {
+        "ok": "Alimentazione OK",
+        "warn": "Under-voltage rilevato (dal boot)",
+        "alert": "Under-voltage / throttling in corso",
+        "unknown": "Alimentazione: n/d",
+    }
+
+    def set_power_state(self, throttled: int | None) -> None:
+        """Colour by vcgencmd throttling state: green OK, orange (occurred),
+        red (active), grey (no reading / not a Pi)."""
+        state = power_state(throttled)
+        self.set_color(self._POWER_COLORS[state])
+        self.set_tooltip(self._POWER_TIPS[state])
 
     def _draw(self, p: QPainter) -> None:
         p.setPen(Qt.PenStyle.NoPen)

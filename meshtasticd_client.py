@@ -102,18 +102,27 @@ def get_event_queue() -> asyncio.Queue:
     return _event_queues[0]
 
 
+def _signal_tx() -> None:
+    """Pulse the GUI's TX activity indicator. Best-effort; no-op without a GUI
+    subscriber. Called from the loop thread, so _enqueue_event is safe direct."""
+    _enqueue_event({'type': 'tx_activity'})
+
+
 async def request_traceroute(node_id: str) -> None:
     """Queue a traceroute request to the given node."""
+    _signal_tx()
     await _command_queue.put(lambda: _interface.sendTraceRoute(dest=node_id, hopLimit=3))
 
 
 async def request_position(node_id: str) -> None:
     """Queue a position request to the given node."""
+    _signal_tx()
     await _command_queue.put(lambda: _interface.requestPosition(node_id))
 
 
 async def send_text(text: str, destination_id: str, channel: int = 0) -> None:
     """Queue a text message to the given destination."""
+    _signal_tx()
     await _command_queue.put(
         lambda: _interface.sendText(text, destinationId=destination_id, channelIndex=channel)
     )
@@ -277,6 +286,7 @@ async def send_waypoint(name: str, lat: float, lon: float,
     """Send a waypoint via serial interface."""
     if not _connected or not _interface:
         raise RuntimeError('Board not connected')
+    _signal_tx()
     import random
     wp_id = random.randint(1, 0x7FFFFFFF)
     _n, _la, _lo, _ic, _de, _ex, _id = name, lat, lon, icon, description, expire, wp_id
@@ -884,6 +894,7 @@ def _refresh_node_cache() -> None:
                 'role':             user.get('role'),
                 'public_key':       user.get('publicKey'),
                 'altitude':         pos.get('altitude'),
+                'sats_in_view':     pos.get('satsInView') or pos.get('sats_in_view'),
             }
         _dirty_nodes.update(new_cache.keys())
         _node_cache = new_cache  # atomic swap
@@ -1036,6 +1047,7 @@ def _on_receive(packet, interface) -> None:
             'longitude':  pos.get('longitude'),
             'last_heard': int(time.time()),
             'altitude':   pos.get('altitude'),
+            'sats_in_view': pos.get('satsInView') or pos.get('sats_in_view'),
         }
         if _loop is not None:
             _loop.call_soon_threadsafe(_enqueue_event,typed_event)

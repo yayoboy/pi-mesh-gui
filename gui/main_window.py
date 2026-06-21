@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 from gui.core.tasks import schedule as _schedule
 from gui.widgets.status_icons import (
     BatteryIcon,
+    BoltIcon,
     ConfigIcon,
     ConnIcon,
     GpsIcon,
@@ -42,8 +43,10 @@ from gui.widgets.status_icons import (
     MetricsIcon,
     NodesIcon,
     RotationIcon,
+    RxIcon,
     ScreenshotIcon,
     SignalIcon,
+    TxIcon,
     icon_pixmap,
 )
 
@@ -137,6 +140,15 @@ class StatusBar(QFrame):
         self._conn = ConnIcon(self)
         self._conn.set_tooltip("Radio")
         self._conn.setAccessibleName("Stato connessione radio")
+        self._rx = RxIcon(self)
+        self._rx.set_tooltip("Ricezione pacchetti")
+        self._rx.setAccessibleName("Attività di ricezione radio")
+        self._tx = TxIcon(self)
+        self._tx.set_tooltip("Trasmissione pacchetti")
+        self._tx.setAccessibleName("Attività di trasmissione radio")
+        self._power = BoltIcon(self)
+        self._power.set_power_state(None)
+        self._power.setAccessibleName("Stato alimentazione")
         _ACTION_COLOR = "#cdd"
         self._rot = RotationIcon(self)
         self._rot.set_color(_ACTION_COLOR)
@@ -155,7 +167,8 @@ class StatusBar(QFrame):
         # Reboot/shutdown intentionally NOT in the status bar — too easy to
         # tap by accident on the touchscreen. Both actions are available in
         # Config → Amministrazione with double-confirmation.
-        for w in (self._batt, self._lora, self._gps, self._conn,
+        for w in (self._rx, self._tx, self._lora, self._gps,
+                  self._batt, self._power, self._conn,
                   self._rot, self._shot):
             root.addWidget(w)
 
@@ -165,7 +178,9 @@ class StatusBar(QFrame):
                      local_name: str | None = None,
                      battery: int | None = None,
                      snr: float | None = None,
-                     gps_fix: bool | None = None) -> None:
+                     gps_fix: bool | None = None,
+                     gps_sats: int | None = None,
+                     throttled: int | None = None) -> None:
         # Clamp the label width so a long local_name doesn't fight the icons
         # for space (and end up rendered with the left side clipped off).
         raw = local_name or local_id or "pi-Mesh"
@@ -176,7 +191,14 @@ class StatusBar(QFrame):
         self._conn.set_connected(connected)
         self._batt.set_level(None if battery is None else battery / 100.0)
         self._lora.set_strength(snr)
-        self._gps.set_fix(bool(gps_fix))
+        self._gps.set_gps(bool(gps_fix), gps_sats)
+        self._power.set_power_state(throttled)
+
+    def pulse_rx(self, *_args) -> None:
+        self._rx.pulse()
+
+    def pulse_tx(self, *_args) -> None:
+        self._tx.pulse()
 
     # Slots --------------------------------------------------------------
 
@@ -409,6 +431,18 @@ class MainWindow(QMainWindow):
             if sig is not None:
                 sig.connect(self._on_status_event)
 
+        # RX activity: any incoming packet flashes the RX arrow.
+        for sig_name in ("message_received", "position_updated", "telemetry",
+                         "node_updated", "neighbor_info", "waypoint",
+                         "traceroute_result"):
+            sig = getattr(eventbus, sig_name, None)
+            if sig is not None:
+                sig.connect(self._status.pulse_rx)
+        # TX activity: the client's send paths emit tx_activity.
+        tx_sig = getattr(eventbus, "tx_activity", None)
+        if tx_sig is not None:
+            tx_sig.connect(self._status.pulse_tx)
+
         self._select_tab(0)
 
     def _select_tab(self, index: int) -> None:
@@ -455,6 +489,7 @@ class MainWindow(QMainWindow):
         self._status_refresh_pending = False
         try:
             import meshtasticd_client
+            import rpi_telemetry
             local = meshtasticd_client.get_local_node() or {}
             self._status.update_state(
                 connected=meshtasticd_client.is_connected(),
@@ -464,6 +499,8 @@ class MainWindow(QMainWindow):
                 battery=local.get("battery_level"),
                 snr=local.get("snr"),
                 gps_fix=local.get("latitude") is not None,
+                gps_sats=local.get("sats_in_view"),
+                throttled=rpi_telemetry.get_last().get("throttled"),
             )
         except Exception:
             log.debug("status refresh failed", exc_info=True)

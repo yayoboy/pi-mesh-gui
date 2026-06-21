@@ -32,6 +32,7 @@ class _SignalSink(Protocol):
     sensor: _SignalLike
     paxcounter: _SignalLike
     rpi_telemetry: _SignalLike
+    tx_activity: _SignalLike
     mqtt_event: _SignalLike
 
 
@@ -51,6 +52,7 @@ EVENT_TYPE_TO_SIGNAL: dict[str, str] = {
     "sensor":            "sensor",
     "paxcounter":        "paxcounter",
     "rpi_telemetry":     "rpi_telemetry",
+    "tx_activity":       "tx_activity",
 }
 
 

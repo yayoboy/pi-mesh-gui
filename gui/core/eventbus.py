@@ -34,6 +34,7 @@ class EventBus(QObject):
     sensor            = Signal(dict)
     paxcounter        = Signal(dict)
     rpi_telemetry     = Signal(dict)
+    tx_activity       = Signal(dict)
     # MQTT bridge forwarded events: (event_type, payload).
     mqtt_event        = Signal(str, dict)
 

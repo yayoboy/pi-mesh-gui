@@ -23,6 +23,7 @@ def collect() -> dict:
         'disk_used_mb': 0,
         'disk_percent': 0.0,
         'uptime_seconds': _uptime(),
+        'throttled': _throttled(),
     }
     # RAM from /proc/meminfo
     try:
@@ -92,3 +93,25 @@ def _uptime() -> int:
             return int(float(f.read().split()[0]))
     except (OSError, ValueError):
         return 0
+
+
+def _throttled() -> int | None:
+    """Read the Pi power/throttling bitmask via ``vcgencmd get_throttled``.
+
+    Returns the integer mask (0 == healthy), or None when vcgencmd is absent
+    or fails (e.g. on a non-Pi dev box). Output format: ``throttled=0x50005``.
+    """
+    import subprocess
+    try:
+        out = subprocess.run(
+            ['vcgencmd', 'get_throttled'],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    try:
+        return int(out.stdout.strip().split('=', 1)[1], 16)
+    except (IndexError, ValueError):
+        return None
